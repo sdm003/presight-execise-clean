@@ -1,0 +1,19 @@
+{
+  "name": "presight-execise",
+  "version": "1.0.0",
+  "repository": "",
+  "author": "",
+  "license": "MIT",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "start": "lerna run start",
+    "build": "npm run build --workspace client",
+    "seed": "npm run seed --workspace server"
+  },
+  "devDependencies": {
+    "lerna": "~8.2.1"
+  }
+}
