@@ -29,4 +29,8 @@ yarn-debug.log*
 yarn-error.log*
 
 .parcel-cache
-.idea/
+.idea/graphify-out/
+
+# graphify (local dev only)
+graphify-out/
+**/graphify-out/
