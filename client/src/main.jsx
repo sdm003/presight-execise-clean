@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
@@ -24,7 +24,7 @@ const writeState = state => {
 
 function App() {
   const [state, setState] = useState(readState), [users, setUsers] = useState([]), [facets, setFacets] = useState({ hobbies: [], nationalities: [] });
-  const [page, setPage] = useState(1), [meta, setMeta] = useState(null), [status, setStatus] = useState('loading'), [error, setError] = useState(''), [scrollTop, setScrollTop] = useState(0);
+  const [page, setPage] = useState(1), [meta, setMeta] = useState(null), [status, setStatus] = useState('loading'), [error, setError] = useState('');
   const sentinel = useRef(null);
   useEffect(() => { writeState(state); setUsers([]); setPage(1); setMeta(null); setStatus('loading'); setError(''); }, [state]);
   useEffect(() => {
@@ -60,9 +60,6 @@ function App() {
   const toggle = (key, value) => change({ [key]: state[key].includes(value) ? state[key].filter(v => v !== value) : [...state[key], value] });
   const clearFilters = () => change({ search: '', hobbies: [], nationalities: [] });
   const selectedFilters = [...state.nationalities.map(value => ({ key: `nationality-${value}`, label: value, type: 'nationalities' })), ...state.hobbies.map(value => ({ key: `hobby-${value}`, label: value, type: 'hobbies' }))];
-  useEffect(() => { const onScroll = () => setScrollTop(window.scrollY); addEventListener('scroll', onScroll, { passive: true }); return () => removeEventListener('scroll', onScroll); }, []);
-  const start = Math.max(0, Math.floor(scrollTop / 132) - 4), end = Math.min(users.length, start + Math.ceil(innerHeight / 132) + 8);
-  const visible = useMemo(() => users.slice(start, end), [users, start, end]);
   return <main>
     <header className="hero">
       <div><p className="eyebrow">DIRECTORY</p><h1>Find your people</h1><p className="subtitle">Browse a curated community by name, nationality, and interests.</p></div>
@@ -81,7 +78,7 @@ function App() {
       {status === 'error' && <div className="message error"><strong>We couldn't load the directory.</strong><span>{error}</span><button onClick={() => window.location.reload()}>Try again</button></div>}
       {status === 'loading' && !users.length && <p className="message">Loading directory…</p>}
       {status === 'ready' && !users.length && <p className="message">No people match these filters.</p>}
-      <div className="virtual-list" style={{ paddingTop: start * 132, paddingBottom: Math.max(0, users.length - end) * 132 }}><div className="cards">{visible.map(user => <article className="card" key={user.id}><img src={user.avatar} alt="" loading="lazy" /><div className="card-body"><div className="card-heading"><h2>{user.first_name} {user.last_name}</h2><span className="age">{user.age}</span></div><p className="location">{user.nationality}</p><div className="hobbies">{user.hobbies.slice(0, 2).map(hobby => <span key={hobby}>{hobby}</span>)}{user.hobbies.length > 2 && <span className="more">+{user.hobbies.length - 2}</span>}</div></div></article>)}</div></div>
+      <div className="cards">{users.map(user => <article className="card" key={user.id}><img src={user.avatar} alt="" loading="lazy" /><div className="card-body"><div className="card-heading"><h2>{user.first_name} {user.last_name}</h2><span className="age">{user.age}</span></div><p className="location">{user.nationality}</p><div className="hobbies">{user.hobbies.slice(0, 2).map(hobby => <span key={hobby}>{hobby}</span>)}{user.hobbies.length > 2 && <span className="more">+{user.hobbies.length - 2}</span>}</div></div></article>)}</div>
       <div ref={sentinel} className="sentinel" aria-live="polite">{status === 'loading' && users.length ? 'Loading more…' : meta && `${users.length} of ${meta.total}`}</div>
     </section></div>
   </main>;
