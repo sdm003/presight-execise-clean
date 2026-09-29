@@ -19,7 +19,7 @@ const writeState = state => {
   const q = new URLSearchParams();
   if (state.search) q.set('search', state.search);
   state.hobbies.forEach(v => q.append('hobby', v)); state.nationalities.forEach(v => q.append('nationality', v));
-  q.set('sort', state.sort); q.set('direction', state.direction); history.replaceState(null, '', `?${q}`);
+  q.set('sort', state.sort); q.set('direction', state.direction); history.replaceState(null, '', `?${q.toString().replace(/\+/g, '%20')}`);
 };
 
 function App() {
