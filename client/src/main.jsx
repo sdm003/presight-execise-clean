@@ -4,11 +4,12 @@ import './style.css';
 
 const api = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001' : '');
 const validSorts = ['first_name', 'last_name', 'age', 'nationality'];
+const normalizeSearch = value => value.replace(/\s+/g, ' ').trim().slice(0, 100);
 const readState = () => {
   const q = new URLSearchParams(location.search);
   const sort = q.get('sort');
   return {
-    search: (q.get('search') || '').slice(0, 100),
+    search: normalizeSearch(q.get('search') || ''),
     hobbies: [...new Set(q.getAll('hobby').filter(Boolean))].slice(0, 20),
     nationalities: [...new Set(q.getAll('nationality').filter(Boolean))].slice(0, 20),
     sort: validSorts.includes(sort) ? sort : 'first_name',
@@ -25,11 +26,21 @@ const writeState = state => {
 function App() {
   const [state, setState] = useState(readState), [users, setUsers] = useState([]), [facets, setFacets] = useState({ hobbies: [], nationalities: [] });
   const [page, setPage] = useState(1), [meta, setMeta] = useState(null), [status, setStatus] = useState('loading'), [error, setError] = useState('');
+  const [query, setQuery] = useState(state.search);
   const sentinel = useRef(null);
-  useEffect(() => { writeState(state); setUsers([]); setPage(1); setMeta(null); setStatus('loading'); setError(''); }, [state]);
+  const change = patch => setState(s => ({ ...s, ...patch }));
+  useEffect(() => setQuery(state.search), [state.search]);
+  useEffect(() => {
+    const applied = normalizeSearch(query);
+    if (applied === state.search) return;
+    const timer = setTimeout(() => change({ search: applied }), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+  useEffect(() => { writeState(state); setPage(1); }, [state]);
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    setStatus('loading'); setError('');
     const q = new URLSearchParams({ ...state, page, limit: 40, nationalities: state.nationalities.join(','), hobbies: state.hobbies.join(',') }); delete q.search; if (state.search) q.set('search', state.search);
     fetch(`${api}/api/users?${q}`, { signal: controller.signal }).then(async response => {
       const data = await response.json().catch(() => ({}));
@@ -56,14 +67,15 @@ function App() {
     if (sentinel.current) observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [meta, status]);
-  const change = patch => setState(s => ({ ...s, ...patch }));
   const toggle = (key, value) => change({ [key]: state[key].includes(value) ? state[key].filter(v => v !== value) : [...state[key], value] });
-  const clearFilters = () => change({ search: '', hobbies: [], nationalities: [] });
+  const clearFilters = () => { setQuery(''); change({ search: '', hobbies: [], nationalities: [] }); };
   const selectedFilters = [...state.nationalities.map(value => ({ key: `nationality-${value}`, label: value, type: 'nationalities' })), ...state.hobbies.map(value => ({ key: `hobby-${value}`, label: value, type: 'hobbies' }))];
+  const firstLoad = status === 'loading' && page === 1 && !users.length;
+  const reloading = status === 'loading' && page === 1 && users.length > 0;
   return <main>
     <header className="hero">
       <div><p className="eyebrow">DIRECTORY</p><h1>Find your people</h1><p className="subtitle">Browse a curated community by name, nationality, and interests.</p></div>
-      <div className="search"><span aria-hidden="true">⌕</span><input aria-label="Search names" placeholder="Search by first or last name…" value={state.search} onChange={e => change({ search: e.target.value })} /></div>
+      <div className="search"><span aria-hidden="true">⌕</span><input aria-label="Search names" placeholder="Search by first or last name…" value={query} onChange={e => setQuery(e.target.value)} />{query && <button className="search-clear" aria-label="Clear search" onClick={() => setQuery('')}>×</button>}</div>
     </header>
     <div className="toolbar">
       <div><strong>{meta?.total ?? '—'}</strong><span> people found</span></div>
@@ -76,10 +88,10 @@ function App() {
       <Facet title="Hobbies" items={facets.hobbies} selected={state.hobbies} onToggle={v => toggle('hobbies', v)} />
     </aside><section className="results">
       {status === 'error' && <div className="message error"><strong>We couldn't load the directory.</strong><span>{error}</span><button onClick={() => window.location.reload()}>Try again</button></div>}
-      {status === 'loading' && !users.length && <p className="message">Loading directory…</p>}
       {status === 'ready' && !users.length && <p className="message">No people match these filters.</p>}
-      <div className="cards">{users.map(user => <article className="card" key={user.id}><img src={user.avatar} alt="" loading="lazy" /><div className="card-body"><div className="card-heading"><h2>{user.first_name} {user.last_name}</h2><span className="age">{user.age}</span></div><p className="location">{user.nationality}</p><div className="hobbies">{user.hobbies.slice(0, 2).map(hobby => <span key={hobby}>{hobby}</span>)}{user.hobbies.length > 2 && <span className="more">+{user.hobbies.length - 2}</span>}</div></div></article>)}</div>
-      <div ref={sentinel} className="sentinel" aria-live="polite">{status === 'loading' && users.length ? 'Loading more…' : meta && `${users.length} of ${meta.total}`}</div>
+      {firstLoad && <div className="cards">{Array.from({ length: 12 }, (_, i) => <div className="card skeleton" key={i}><div className="s-avatar" /><div className="card-body"><div className="s-line s-name" /><div className="s-line s-sub" /><div className="s-tags"><span /><span /></div></div></div>)}</div>}
+      <div className={`cards${reloading ? ' reloading' : ''}`}>{users.map(user => <article className="card" key={user.id}><img src={user.avatar} alt="" loading="lazy" /><div className="card-body"><div className="card-heading"><h2>{user.first_name} {user.last_name}</h2><span className="age">{user.age}</span></div><p className="location">{user.nationality}</p><div className="hobbies">{user.hobbies.slice(0, 2).map(hobby => <span key={hobby}>{hobby}</span>)}{user.hobbies.length > 2 && <span className="more">+{user.hobbies.length - 2}</span>}</div></div></article>)}</div>
+      <div ref={sentinel} className="sentinel" aria-live="polite">{status === 'loading' && page > 1 ? 'Loading more…' : meta && users.length ? `${users.length} of ${meta.total}` : ''}</div>
     </section></div>
   </main>;
 }
