@@ -3,8 +3,6 @@ const last = ['Smith', 'Garcia', 'Chen', 'Patel', 'Brown', 'Kim', 'Martin', 'Wil
 const nationalities = ['American', 'British', 'Canadian', 'French', 'German', 'Indian', 'Japanese', 'Mexican', 'Spanish', 'Swedish'];
 const hobbies = ['Reading', 'Cycling', 'Cooking', 'Photography', 'Hiking', 'Music', 'Gaming', 'Travel', 'Painting', 'Gardening', 'Running', 'Chess'];
 
-// ponytail: deterministic LCG keeps the seed reproducible without a dependency;
-// swap for faker if you need realistic names.
 const rand = seed => () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
 
 function seedDatabase(db) {
