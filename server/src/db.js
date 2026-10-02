@@ -1,11 +1,13 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
-const { seedDatabase } = require('./seed-data');
+const fs = require("node:fs");
+const path = require("node:path");
+const { DatabaseSync } = require("node:sqlite");
+const { seedDatabase } = require("./seed-data");
 
 const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
-const dataDir = path.join(__dirname, '..', 'data');
-const dbPath = process.env.DATABASE_PATH || (isVercel ? ':memory:' : path.join(dataDir, 'users.sqlite'));
+const dataDir = path.join(__dirname, "..", "data");
+const dbPath =
+  process.env.DATABASE_PATH ||
+  (isVercel ? ":memory:" : path.join(dataDir, "users.sqlite"));
 const bootstrap = isVercel;
 
 if (!isVercel) fs.mkdirSync(dataDir, { recursive: true });
@@ -27,5 +29,5 @@ if (!isVercel || bootstrap) {
   `);
 }
 if (bootstrap) seedDatabase(db);
-if (isVercel) db.exec('PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;');
+if (isVercel) db.exec("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;");
 module.exports = db;
