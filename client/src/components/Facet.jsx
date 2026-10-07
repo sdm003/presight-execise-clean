@@ -5,11 +5,20 @@ const Facet = ({ title, items, selected, onToggle }) => (
     <legend>
       {title}
       <span>
-        {selected.length ? `${selected.length} selected` : "Select any"}
+        {selected.length
+          ? `${selected.length} selected`
+          : title === "Hobbies"
+            ? "Match all"
+            : "Match any"}
       </span>
     </legend>
 
-    {items.map((item) => (
+    {[
+      ...items,
+      ...selected
+        .filter((value) => !items.some((item) => item.value === value))
+        .map((value) => ({ value, count: 0 })),
+    ].map((item) => (
       <label
         className={selected.includes(item.value) ? "checked" : ""}
         key={item.value}

@@ -257,6 +257,68 @@ fieldset b {
   gap: 14px;
 }
 
+.virtual-cards {
+  position: relative;
+  display: grid;
+  gap: var(--card-gap);
+}
+
+.virtual-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  gap: var(--card-gap);
+}
+
+.virtual-window .card {
+  height: var(--card-height);
+  min-height: 0;
+  overflow: hidden;
+  animation: none;
+}
+
+.card img {
+  flex-shrink: 0;
+}
+
+.card-heading h2 {
+  min-width: 0;
+}
+
+.location {
+  display: flex;
+  gap: 8px;
+}
+
+.location > span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.location .age {
+  flex-shrink: 0;
+}
+
+.virtual-window .hobbies {
+  flex-wrap: nowrap;
+}
+
+.virtual-window .hobbies span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.virtual-window .hobbies .more {
+  flex-shrink: 0;
+}
+
+.filter-toggle {
+  display: none;
+}
+
 .cards.reloading {
   opacity: 0.55;
   transition: opacity 0.2s;
@@ -498,7 +560,23 @@ label:has(input:focus-visible) {
   }
 
   aside {
+    display: none;
     margin-bottom: 22px;
+  }
+
+  aside.open {
+    display: block;
+  }
+
+  .filter-toggle {
+    display: block;
+    margin-bottom: 14px;
+    padding: 10px 16px;
+    border: 1px solid #e7ebf2;
+    border-radius: 8px;
+    background: #fff;
+    color: #526071;
+    font: inherit;
   }
 
   .cards {

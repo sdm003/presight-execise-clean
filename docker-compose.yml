@@ -1,5 +1,29 @@
 services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: directory
+      POSTGRES_USER: directory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment or .env}
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directory -d directory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
   api:
     build: .
     ports: ["3001:3001"]
-    volumes: ["./server/data:/app/server/data"]
+    environment:
+      DATABASE_URL: postgresql://directory:${POSTGRES_PASSWORD}@db:5432/directory
+      PG_POOL_MAX: 5
+      NODE_ENV: production
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3001}
+    depends_on:
+      db:
+        condition: service_healthy
+    stop_grace_period: 15s
+    command:
+      ["sh", "-c", "node server/src/setup.js && exec node server/src/index.js"]
+volumes:
+  postgres-data:

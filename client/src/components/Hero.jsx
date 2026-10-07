@@ -1,6 +1,6 @@
 import React from "react";
 
-const Hero = ({ query, setQuery }) => (
+const Hero = ({ query, setQuery, setComposing }) => (
   <header className="hero">
     <div>
       <p className="eyebrow">DIRECTORY</p>
@@ -16,6 +16,11 @@ const Hero = ({ query, setQuery }) => (
         placeholder="Search by first or last name…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={(e) => {
+          setQuery(e.currentTarget.value);
+          setComposing(false);
+        }}
       />
       {query && (
         <button

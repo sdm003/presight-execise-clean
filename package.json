@@ -1,19 +1,27 @@
 {
   "name": "presight-execise",
   "version": "1.0.0",
-  "repository": "",
-  "author": "",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "repository": "https://github.com/sdm003/presight-execise-clean",
+  "author": "sdm003",
   "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "workspaces": [
     "client",
     "server"
   ],
   "scripts": {
-    "start": "lerna run start",
+    "start": "npm run start --workspace server",
     "build": "npm run build --workspace client",
-    "seed": "npm run seed --workspace server"
+    "setup": "npm run setup --workspace server",
+    "test": "npm run test --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present && npm test && npm run build",
+    "test:load": "npm run test:load --workspace server"
   },
   "devDependencies": {
-    "lerna": "~8.2.1"
+    "prettier": "3.9.9"
   }
 }

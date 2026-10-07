@@ -1,18 +1,29 @@
 {
   "name": "presight-server",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "main": "src/index.js",
   "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/index.js",
-    "seed": "node src/seed.js",
-    "test": "node --test"
+    "setup": "node src/setup.js",
+    "check": "prettier --check \"src/**/*.js\" \"scripts/**/*.js\" \"test/**/*.js\" \"openapi.json\"",
+    "test": "node --test",
+    "test:coverage": "node --experimental-test-coverage --test",
+    "test:load": "node scripts/load.js"
   },
   "dependencies": {
-    "express": "~5.1.0"
-  },
-  "devDependencies": {
-    "@types/express": "~5.0.1",
-    "@types/node-fetch": "~2.6.12"
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.12.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.223.0",
+    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/sdk-trace-base": "2.12.0",
+    "@opentelemetry/sdk-trace-node": "2.12.0",
+    "express": "5.2.1",
+    "pg": "8.23.1",
+    "pino": "9.14.0"
   }
 }

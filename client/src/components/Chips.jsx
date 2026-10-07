@@ -7,6 +7,7 @@ const Chips = ({ filters, onRemove }) =>
         <button
           key={filter.key}
           onClick={() => onRemove(filter.type, filter.label)}
+          aria-label={`Remove ${filter.label} filter`}
         >
           {filter.label}
           <span>×</span>

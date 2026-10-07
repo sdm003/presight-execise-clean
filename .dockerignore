@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+.git
+.idea
+**/graphify-out
+**/.graphify*
+server/data
+client/dist
+.env*
+coverage

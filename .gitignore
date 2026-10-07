@@ -13,6 +13,8 @@ server/data/
 dist/
 build/
 scripts/
+!server/scripts/
+!server/scripts/load.js
 
 # misc
 .DS_Store
@@ -29,7 +31,7 @@ yarn-debug.log*
 yarn-error.log*
 
 .parcel-cache
-.idea/graphify-out/
+.idea/
 
 # graphify (local dev only)
 graphify-out/

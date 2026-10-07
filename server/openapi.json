@@ -1,0 +1,786 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Presight Directory API",
+    "version": "1.0.0",
+    "description": "HTTP API for creating and listing directory users backed by PostgreSQL. The contract matches the standalone Node/Express server and documents request validation, pagination, facets, health/readiness behavior, and operational error responses."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Local standalone server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Users"
+    }
+  ],
+  "paths": {
+    "/api/live": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getLive",
+        "summary": "Liveness probe",
+        "description": "Returns process liveness only. This endpoint does not require PostgreSQL and is not blocked on database readiness.",
+        "responses": {
+          "200": {
+            "description": "Process is alive.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestID"
+              },
+              "traceparent": {
+                "$ref": "#/components/headers/Traceparent"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CorsForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getHealth",
+        "summary": "Readiness probe",
+        "description": "Returns readiness for traffic. This endpoint checks PostgreSQL connectivity and also fails during graceful drainage or capacity saturation.",
+        "responses": {
+          "200": {
+            "description": "Process and database are ready.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestID"
+              },
+              "traceparent": {
+                "$ref": "#/components/headers/Traceparent"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CorsForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getReady",
+        "summary": "Readiness probe alias",
+        "description": "Alias of `/api/health` with the same database-backed readiness behavior.",
+        "responses": {
+          "200": {
+            "description": "Process and database are ready.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestID"
+              },
+              "traceparent": {
+                "$ref": "#/components/headers/Traceparent"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CorsForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": ["Users"],
+        "operationId": "listUsers",
+        "summary": "List users",
+        "description": "Returns paginated users plus hobby and nationality facets. Search is normalized by trimming, collapsing internal whitespace, and truncating to 100 characters. Repeat `nationality` for OR semantics and `hobby` for AND semantics, using the same parameter names as the client URL. Both trim values, ignore empty entries, deduplicate and keep only the first 20 unique values. Commas are literal characters, not separators. Nationality facet counts intentionally ignore the active nationality filter while still respecting search and hobbies so the available nationality list remains stable.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/Nationalities"
+          },
+          {
+            "$ref": "#/components/parameters/Hobbies"
+          },
+          {
+            "$ref": "#/components/parameters/Sort"
+          },
+          {
+            "$ref": "#/components/parameters/Direction"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User page, pagination metadata, and current facets.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestID"
+              },
+              "traceparent": {
+                "$ref": "#/components/headers/Traceparent"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListUsersResponse"
+                },
+                "examples": {
+                  "empty": {
+                    "value": {
+                      "data": [],
+                      "pagination": {
+                        "page": 1,
+                        "limit": 40,
+                        "total": 0,
+                        "hasMore": false
+                      },
+                      "facets": {
+                        "hobbies": [],
+                        "nationalities": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/CorsForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "operationId": "createUser",
+        "summary": "Create a user",
+        "description": "Creates one user and, atomically, its hobby rows. All six fields are required. The server trims string fields, rejects control characters, requires 0–10 distinct hobbies, and accepts only absolute HTTP(S) avatar URLs without credentials. Commas in nationality and hobby values are supported.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              },
+              "examples": {
+                "basic": {
+                  "value": {
+                    "avatar": "https://example.com/avatar.png",
+                    "first_name": "Ava",
+                    "last_name": "Chen",
+                    "age": 25,
+                    "nationality": "American",
+                    "hobbies": ["Reading", "Cycling"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Persisted user. `hobbies` are returned in the normalized request order.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestID"
+              },
+              "traceparent": {
+                "$ref": "#/components/headers/Traceparent"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/CorsForbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/RequestTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "headers": {
+      "XRequestID": {
+        "description": "Server-generated request identifier. Incoming client IDs are not trusted or echoed back.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Traceparent": {
+        "description": "W3C trace context response header. Present when tracing is enabled for the process.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RetryAfter": {
+        "description": "Retry hint used for temporary saturation or dependency unavailability. The current server value is always `1` second.",
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    },
+    "parameters": {
+      "Search": {
+        "name": "search",
+        "in": "query",
+        "description": "Free-text search over `first_name + ' ' + last_name`. Leading/trailing whitespace is trimmed, internal whitespace is collapsed to single spaces, and the normalized value is truncated to 100 characters.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Nationalities": {
+        "name": "nationality",
+        "in": "query",
+        "style": "form",
+        "explode": true,
+        "description": "Repeat the parameter for each nationality (OR semantics). Values are trimmed, empty entries and duplicates ignored; at most the first 20 unique values are used. Commas are literal.",
+        "schema": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "example": ["American", "British"]
+      },
+      "Hobbies": {
+        "name": "hobby",
+        "in": "query",
+        "style": "form",
+        "explode": true,
+        "description": "Repeat the parameter for each hobby (AND semantics). Values are trimmed, empty entries and duplicates ignored; at most the first 20 unique values are used. Commas are literal.",
+        "schema": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "example": ["Reading", "Cycling"]
+      },
+      "Sort": {
+        "name": "sort",
+        "in": "query",
+        "description": "Requested sort field. Unknown values fall back to `first_name`.",
+        "schema": {
+          "type": "string",
+          "enum": ["first_name", "last_name", "age", "nationality"],
+          "default": "first_name"
+        }
+      },
+      "Direction": {
+        "name": "direction",
+        "in": "query",
+        "description": "Sort direction. Any value other than `desc` behaves as ascending.",
+        "schema": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "default": "asc"
+        }
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "description": "1-based page number. Defaults to `1`. Non-positive or invalid values fall back to `1`; values above `100000` are capped.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Page size. Defaults to `40`. Non-positive or invalid values fall back to `40`; values above `100` are capped.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 40
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok"],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "AvatarUrl": {
+        "type": "string",
+        "format": "uri",
+        "maxLength": 2048,
+        "pattern": "^https:\\/\\/(?![^/?#]*@)[^\\s]+$|^http:\\/\\/(?![^/?#]*@)[^\\s]+$",
+        "description": "Absolute HTTP(S) URL without credentials."
+      },
+      "PersonName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "pattern": "^(?!.*[\\u0000-\\u001F\\u007F]).+$",
+        "description": "Trimmed nonempty string up to 100 characters with no control characters."
+      },
+      "Nationality": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "pattern": "^(?!.*[\\u0000-\\u001F\\u007F]).+$",
+        "description": "Trimmed nonempty string up to 100 characters with no control characters."
+      },
+      "Hobby": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "pattern": "^(?!.*[\\u0000-\\u001F\\u007F]).+$",
+        "description": "Trimmed nonempty string up to 100 characters with no control characters."
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Only the six documented fields are persisted; additional fields are ignored. String limits and hobby uniqueness are checked after trimming.",
+        "required": [
+          "avatar",
+          "first_name",
+          "last_name",
+          "age",
+          "nationality",
+          "hobbies"
+        ],
+        "properties": {
+          "avatar": {
+            "$ref": "#/components/schemas/AvatarUrl"
+          },
+          "first_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "last_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "nationality": {
+            "$ref": "#/components/schemas/Nationality"
+          },
+          "hobbies": {
+            "type": "array",
+            "description": "Distinct hobby values in normalized request order.",
+            "items": {
+              "$ref": "#/components/schemas/Hobby"
+            },
+            "minItems": 0,
+            "maxItems": 10,
+            "uniqueItems": true
+          }
+        }
+      },
+      "CreatedUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "avatar",
+          "first_name",
+          "last_name",
+          "age",
+          "nationality",
+          "hobbies"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "avatar": {
+            "$ref": "#/components/schemas/AvatarUrl"
+          },
+          "first_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "last_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "nationality": {
+            "$ref": "#/components/schemas/Nationality"
+          },
+          "hobbies": {
+            "type": "array",
+            "description": "Distinct hobby values in normalized request order.",
+            "items": {
+              "$ref": "#/components/schemas/Hobby"
+            },
+            "minItems": 0,
+            "maxItems": 10,
+            "uniqueItems": true
+          }
+        }
+      },
+      "ListedUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "avatar",
+          "first_name",
+          "last_name",
+          "age",
+          "nationality",
+          "hobbies"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "avatar": {
+            "$ref": "#/components/schemas/AvatarUrl"
+          },
+          "first_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "last_name": {
+            "$ref": "#/components/schemas/PersonName"
+          },
+          "age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "nationality": {
+            "$ref": "#/components/schemas/Nationality"
+          },
+          "hobbies": {
+            "type": "array",
+            "description": "Distinct hobbies sorted ascending for GET responses.",
+            "items": {
+              "$ref": "#/components/schemas/Hobby"
+            },
+            "minItems": 0,
+            "maxItems": 10,
+            "uniqueItems": true
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["page", "limit", "total", "hasMore"],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FacetEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "count"],
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Facets": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hobbies", "nationalities"],
+        "properties": {
+          "hobbies": {
+            "type": "array",
+            "description": "Top 20 hobbies within the active search + filter scope.",
+            "items": {
+              "$ref": "#/components/schemas/FacetEntry"
+            }
+          },
+          "nationalities": {
+            "type": "array",
+            "description": "Top 20 nationalities for the active search + hobbies scope; the active nationality filter is intentionally ignored for these counts.",
+            "items": {
+              "$ref": "#/components/schemas/FacetEntry"
+            }
+          }
+        }
+      },
+      "ListUsersResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "pagination", "facets"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListedUser"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "facets": {
+            "$ref": "#/components/schemas/Facets"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Request validation failed or the JSON body was malformed.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "validation": {
+                "value": {
+                  "error": "hobbies must contain 0–10 nonempty strings of at most 100 characters without control characters"
+                }
+              },
+              "json": {
+                "value": {
+                  "error": "Invalid JSON body"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CorsForbidden": {
+        "description": "Browser origin rejected by CORS policy.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Origin not allowed"
+            }
+          }
+        }
+      },
+      "RequestTooLarge": {
+        "description": "JSON request body exceeded the 32 KiB limit.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Request body too large"
+            }
+          }
+        }
+      },
+      "UnsupportedMedia": {
+        "description": "Request content type or body encoding is unsupported.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "contentType": {
+                "value": {
+                  "error": "Content-Type must be application/json"
+                }
+              },
+              "encoding": {
+                "value": {
+                  "error": "Unsupported body encoding"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Temporary saturation, graceful drainage, or database unavailability.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Service unavailable"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Unexpected failure. Details are not exposed in the response.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestID"
+          },
+          "traceparent": {
+            "$ref": "#/components/headers/Traceparent"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Internal server error"
+            }
+          }
+        }
+      }
+    }
+  }
+}
