@@ -279,8 +279,7 @@
         "tags": ["Users"],
         "operationId": "deleteUser",
         "summary": "Delete a user",
-        "description": "Deletes a user and its hobbies. This administrative operation requires the server-side bearer token configured by ADMIN_API_TOKEN.",
-        "security": [{ "adminBearer": [] }],
+        "description": "Deletes a user and its hobbies.",
         "parameters": [
           {
             "name": "id",
@@ -304,7 +303,6 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/CorsForbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
@@ -314,12 +312,6 @@
     }
   },
   "components": {
-    "securitySchemes": {
-      "adminBearer": {
-        "type": "http",
-        "scheme": "bearer"
-      }
-    },
     "headers": {
       "XRequestID": {
         "description": "Server-generated request identifier. Incoming client IDs are not trusted or echoed back.",
@@ -678,22 +670,6 @@
       }
     },
     "responses": {
-      "Unauthorized": {
-        "description": "A valid administrative bearer token is required.",
-        "headers": {
-          "WWW-Authenticate": {
-            "schema": { "type": "string" }
-          }
-        },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "example": { "error": "Authorization required" }
-          }
-        }
-      },
       "NotFound": {
         "description": "The requested user does not exist.",
         "content": {

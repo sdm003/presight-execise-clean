@@ -173,7 +173,7 @@ GET /api/users?page=1&limit=40
 GET /api/users?search=ava&nationality=American&nationality=British
 GET /api/users?hobby=Reading&hobby=Cycling&sort=age&direction=desc
 POST /api/users
-DELETE /api/users/:id # requires ADMIN_API_TOKEN
+DELETE /api/users/:id
 ```
 
 Create a user (all six fields required; hobbies may be empty):
@@ -216,9 +216,8 @@ connection failures `503` with `Retry-After: 1`; unexpected failures return a
 generic logged `500`. Every response includes `X-Request-ID`, and `traceparent`
 is present when tracing is enabled.
 
-Deletion is protected by `Authorization: Bearer <ADMIN_API_TOKEN>` and removes
-the user plus hobbies atomically. Keep this token server-side; it is intended
-for the load generator and administrative tooling, not the public browser UI.
+Deletion removes the user plus hobbies atomically. This endpoint is intended for
+local cleanup and administrative tooling, not the public browser UI.
 
 Names and nationality must be nonempty trimmed strings up to 100 characters
 without control characters. `age` must be an integer from 0–120. `avatar` must
@@ -247,7 +246,6 @@ Configuration is validated without printing secret values:
 - `PG_LOCK_TIMEOUT_MS`: default `3000`, range `1..120000`.
 - `PG_IDLE_TRANSACTION_TIMEOUT_MS`: default `10000`, range `1..120000`.
 - `PG_SSL`: `true`/`false` only. `true` enables certificate-verified TLS.
-- `ADMIN_API_TOKEN`: optional bearer token required by `DELETE /api/users/:id`.
 - `CLIENT_ORIGIN`: optional exact HTTP(S) browser origin, no path or trailing
   slash.
 - `OTEL_ENABLED`: default `false`. Set `true` to enable tracing.
@@ -328,62 +326,96 @@ guarantee of security. Review advisories and updates regularly.
 
 ## Validation
 
-### Generating test users
+### Performance testing and observing the UI
 
-The local-only `load-test/` folder is ignored by Git and runs against the
-locally running API. It is intentionally restricted to localhost.
-
-```sh
-TARGET_URL=http://localhost:3001 \
-USER_COUNT=1000 \
-CONCURRENCY=10 \
-node load-test/generate-users.js
-```
-
-By default it runs a finite batch of 100 users. For a Gatling-like sustained
-run, set a duration; workers keep creating users until the time expires:
+The local `load-test/` folder and all its artifacts are ignored by Git. The
+performance runner uses **k6**, following the planning, workload, execution,
+monitoring, and analysis approach in the
+[Microsoft performance-testing playbook](https://microsoft.github.io/code-with-engineering-playbook/automated-testing/performance-testing/load-testing/).
+Install k6 (`brew install k6`), or set `K6_BIN` to a downloaded official binary.
+The old Node batch scheduler has been replaced; its `USER_COUNT`, `CONCURRENCY`,
+`TEST_DURATION_SECONDS`, and `REQUESTS_PER_SECOND` options no longer apply.
 
 ```sh
-TARGET_URL=http://localhost:3001 \
-TEST_DURATION_SECONDS=300 \
-CONCURRENCY=10 \
-REPORT_FILE=reports/load-5m.json \
-node load-test/generate-users.js
+TARGET_URL=https://presight-execise-clean.vercel.app \
+PROFILE=baseline SCENARIO=read RATE=5 \
+node load-test/run.js
 ```
 
-Every run writes a JSON report with totals, failures, throughput, and p50/p95/p99
-latency. The default file is `load-test-report.json`.
+Defaults: a separate 15-second read-only warmup, 30-second ramp-up, 120-second
+hold, and 30-second ramp-down. `RATE` means workload iterations/second, not
+concurrent users. An iteration makes one list or create request and, optionally,
+one cleanup request. The open arrival-rate model does not reduce the offered
+load when the server slows down. `PREALLOCATED_VUS=20` and `MAX_VUS=100` bound
+generator concurrency; any dropped iterations fail the test, indicating that
+the intended load was not fully delivered.
 
-For a controlled performance test instead of an unconstrained stress test, cap
-the request rate and ramp it up gradually:
+| Profile    | Purpose                                                              |
+| ---------- | -------------------------------------------------------------------- |
+| `smoke`    | 1 iteration/s for 10 seconds to check contracts and connectivity     |
+| `baseline` | Ramp, sustained expected load, ramp-down                             |
+| `stress`   | Hold at 1x, 2x, 4x RATE, then return to baseline to observe recovery |
+| `spike`    | Baseline, one-second jump to 5x RATE, return and observe recovery    |
+| `soak`     | Ramp, one-hour sustained hold, ramp-down                             |
+
+Override `WARMUP_SECONDS`, `RAMP_SECONDS`, and `HOLD_SECONDS` as needed. These
+are example workloads, not agreed business capacity targets. Define expected
+traffic, dataset size, and SLOs before using results as release gates.
+
+`SCENARIO=read` is the default. It varies paging, search, sorting, repeated
+nationality and hobby filters. `mixed` uses 70% reads and 30% creates; `write`
+only creates users. Payloads use reproducible synthetic names, ages, realistic
+nationalities, distinct hobbies, and actual portrait URLs. Images are not
+downloaded by the HTTP generator; image and rendering performance belong to
+the browser measurement. Writes stay in the target database unless cleanup is
+enabled:
 
 ```sh
-TARGET_URL=http://localhost:3001 \
-TEST_DURATION_SECONDS=300 \
-CONCURRENCY=20 \
-REQUESTS_PER_SECOND=50 \
-RAMP_UP_SECONDS=60 \
-REPORT_FILE=load-test-reports/controlled-5m.json \
-node load-test/generate-users.js
+SCENARIO=mixed DELETE_AFTER=true \
+node load-test/run.js
 ```
 
-`REQUESTS_PER_SECOND` is global across all workers. Leave it unset for a
-stress test that runs as fast as the configured concurrency allows.
+Cleanup deletes only the ID returned by each successful creation, never other
+users. Failed deletions fail the test and log the affected ID. Requests that
+time out after a database commit can still leave an unknown record; compare
+database counts before/after write runs. This is not a bulk production cleanup
+tool.
 
-To create and then delete each generated user, configure the same token on the
-API and runner:
+**Live observation:** open the application URL in one browser tab and
+`http://127.0.0.1:5665` in another. While the test runs, exercise search,
+nationality/hobby filters, scrolling and pagination; use browser DevTools
+Network/Performance to inspect latency, errors, frames and rendering. The
+dashboard graphs traffic, errors, latency and VUs in real time. Manual browser
+observations are supplementary, not automated frontend performance gates.
+
+Each run gets its own directory under `load-test/reports/` with `summary.json`,
+`report.html`, `execution.log`, and `context.json`. The JSON includes per-operation
+metrics, p95/p99, thresholds, stages and run metadata; HTML contains time-series
+charts. Close the dashboard tab after the run if k6 waits to exit.
+For non-interactive runs set `K6_WEB_DASHBOARD_PORT=-1`.
+
+Defaults are p95 < 2000 ms, p99 < 4000 ms, error rate <= 1%, passing checks >=
+99%, zero dropped iterations, and zero cleanup failures. Configure
+`MAX_P95_MS`, `MAX_P99_MS`, `MAX_ERROR_RATE`, and `REQUEST_TIMEOUT_SECONDS`.
+Warmup is excluded from workload acceptance metrics. Failed contracts,
+HTTP errors, timeouts, and threshold violations produce a non-zero exit.
+Do not disable TLS verification; configure a trusted CA if local trust fails.
+
+Correlate the UTC run window with **Vercel Observability/Functions** (duration,
+errors, memory and concurrency) and **Supabase database monitoring** (CPU,
+connections, slow queries, disk and locks). HTTP metrics alone cannot identify
+resource bottlenecks. Record deployment revision with `REVISION`, dataset
+size, region, and platform settings. Repeat the same baseline at least three
+times, change one variable at a time, and compare p95/p99, delivered request
+rate, errors and resources before drawing capacity conclusions. Multi-IP or
+distributed tests and chaos/failover tests require separate infrastructure;
+these local scripts do not claim to validate those properties.
+
+The runner's contract, cleanup and threshold checks can be exercised locally:
 
 ```sh
-ADMIN_API_TOKEN='replace-with-a-long-random-token' \
-TARGET_URL=http://localhost:3001 \
-USER_COUNT=1000 \
-CONCURRENCY=10 \
-DELETE_AFTER=true \
-node load-test/generate-users.js
+node --test load-test/test/*.test.mjs
 ```
-
-The generator is local-only by design. Start the backend locally and point the
-runner at `http://localhost:3001`.
 
 ## Checks
 

@@ -31,7 +31,6 @@ function httpConfig(env = process.env) {
   return {
     mode,
     origin,
-    adminToken: env.ADMIN_API_TOKEN,
     port: integer(env, "PORT", 3001, 65535),
     shutdownTimeout: integer(env, "SHUTDOWN_TIMEOUT_MS", 10000, 120000),
     maxInFlight: integer(env, "HTTP_MAX_IN_FLIGHT", 64, 10000),

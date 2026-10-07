@@ -147,10 +147,9 @@ test("HTTP repeated filter keys reach parameterized queries without CSV splittin
   }
 });
 
-test("DELETE users requires the admin bearer token", async () => {
+test("DELETE users removes a valid user id", async () => {
   let deletedId;
   const app = createApp({
-    config: { adminToken: "test-admin-token" },
     log: quiet,
     repository: {
       listUsers: async () => ({
@@ -168,11 +167,7 @@ test("DELETE users requires the admin bearer token", async () => {
   const server = app.listen(0);
   const url = `http://127.0.0.1:${server.address().port}/api/users/42`;
   try {
-    assert.equal((await fetch(url, { method: "DELETE" })).status, 401);
-    const response = await fetch(url, {
-      method: "DELETE",
-      headers: { authorization: "Bearer test-admin-token" },
-    });
+    const response = await fetch(url, { method: "DELETE" });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { id: 42 });
     assert.equal(deletedId, 42);
