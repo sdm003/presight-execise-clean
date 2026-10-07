@@ -68,7 +68,16 @@ function createRepository({ database = pool } = {}) {
       return { ...rows[0], hobbies: user.hobbies };
     }, database);
 
-  return { listUsers, createUser };
+  const deleteUser = (id) =>
+    transaction(async (client) => {
+      const { rows } = await client.query(
+        "DELETE FROM users WHERE id = $1 RETURNING id",
+        [id],
+      );
+      return rows[0] ? rows[0].id : null;
+    }, database);
+
+  return { listUsers, createUser, deleteUser };
 }
 
 module.exports = { ...createRepository(), createRepository };

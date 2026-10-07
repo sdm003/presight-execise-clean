@@ -6,5 +6,5 @@ node_modules
 **/.graphify*
 server/data
 client/dist
-.env*
+.env
 coverage

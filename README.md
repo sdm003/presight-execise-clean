@@ -173,6 +173,7 @@ GET /api/users?page=1&limit=40
 GET /api/users?search=ava&nationality=American&nationality=British
 GET /api/users?hobby=Reading&hobby=Cycling&sort=age&direction=desc
 POST /api/users
+DELETE /api/users/:id # requires ADMIN_API_TOKEN
 ```
 
 Create a user (all six fields required; hobbies may be empty):
@@ -215,6 +216,10 @@ connection failures `503` with `Retry-After: 1`; unexpected failures return a
 generic logged `500`. Every response includes `X-Request-ID`, and `traceparent`
 is present when tracing is enabled.
 
+Deletion is protected by `Authorization: Bearer <ADMIN_API_TOKEN>` and removes
+the user plus hobbies atomically. Keep this token server-side; it is intended
+for the load generator and administrative tooling, not the public browser UI.
+
 Names and nationality must be nonempty trimmed strings up to 100 characters
 without control characters. `age` must be an integer from 0–120. `avatar` must
 be an absolute HTTP(S) URL without credentials and with a maximum length of
@@ -242,6 +247,7 @@ Configuration is validated without printing secret values:
 - `PG_LOCK_TIMEOUT_MS`: default `3000`, range `1..120000`.
 - `PG_IDLE_TRANSACTION_TIMEOUT_MS`: default `10000`, range `1..120000`.
 - `PG_SSL`: `true`/`false` only. `true` enables certificate-verified TLS.
+- `ADMIN_API_TOKEN`: optional bearer token required by `DELETE /api/users/:id`.
 - `CLIENT_ORIGIN`: optional exact HTTP(S) browser origin, no path or trailing
   slash.
 - `OTEL_ENABLED`: default `false`. Set `true` to enable tracing.
@@ -322,20 +328,89 @@ guarantee of security. Review advisories and updates regularly.
 
 ## Validation
 
+### Generating test users
+
+The local-only `load-test/` folder is ignored by Git and runs against the
+locally running API. It is intentionally restricted to localhost.
+
+```sh
+TARGET_URL=http://localhost:3001 \
+USER_COUNT=1000 \
+CONCURRENCY=10 \
+node load-test/generate-users.js
+```
+
+By default it runs a finite batch of 100 users. For a Gatling-like sustained
+run, set a duration; workers keep creating users until the time expires:
+
+```sh
+TARGET_URL=http://localhost:3001 \
+TEST_DURATION_SECONDS=300 \
+CONCURRENCY=10 \
+REPORT_FILE=reports/load-5m.json \
+node load-test/generate-users.js
+```
+
+Every run writes a JSON report with totals, failures, throughput, and p50/p95/p99
+latency. The default file is `load-test-report.json`.
+
+For a controlled performance test instead of an unconstrained stress test, cap
+the request rate and ramp it up gradually:
+
+```sh
+TARGET_URL=http://localhost:3001 \
+TEST_DURATION_SECONDS=300 \
+CONCURRENCY=20 \
+REQUESTS_PER_SECOND=50 \
+RAMP_UP_SECONDS=60 \
+REPORT_FILE=load-test-reports/controlled-5m.json \
+node load-test/generate-users.js
+```
+
+`REQUESTS_PER_SECOND` is global across all workers. Leave it unset for a
+stress test that runs as fast as the configured concurrency allows.
+
+To create and then delete each generated user, configure the same token on the
+API and runner:
+
+```sh
+ADMIN_API_TOKEN='replace-with-a-long-random-token' \
+TARGET_URL=http://localhost:3001 \
+USER_COUNT=1000 \
+CONCURRENCY=10 \
+DELETE_AFTER=true \
+node load-test/generate-users.js
+```
+
+The generator is local-only by design. Start the backend locally and point the
+runner at `http://localhost:3001`.
+
+## Checks
+
 ```sh
 npm run check
+
 # Optional real PostgreSQL integration tests; use a dedicated test database:
+
 TEST_DATABASE_URL='******localhost:5432/directory_test' npm test
+
 # Optional Node test coverage:
+
 npm run test:coverage --workspace server
+
 # HTTP load smoke starts its own local API; not a benchmark:
+
 npm run test:load --workspace server
+
 # Optional browser regression checks, after building; use existing Chrome:
+
 BROWSER_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
-  npm run test:browser --workspace client
+npm run test:browser --workspace client
+
 # Same browser scenarios against Vite development mode, including StrictMode:
+
 BROWSER_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
-  npm run test:browser --workspace client -- --dev
+npm run test:browser --workspace client -- --dev
 ```
 
 Unit/API-boundary tests run without a database. PostgreSQL integration flows

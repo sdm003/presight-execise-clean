@@ -147,6 +147,40 @@ test("HTTP repeated filter keys reach parameterized queries without CSV splittin
   }
 });
 
+test("DELETE users requires the admin bearer token", async () => {
+  let deletedId;
+  const app = createApp({
+    config: { adminToken: "test-admin-token" },
+    log: quiet,
+    repository: {
+      listUsers: async () => ({
+        data: [],
+        pagination: { page: 1, limit: 40, total: 0, hasMore: false },
+        facets: { hobbies: [], nationalities: [] },
+      }),
+      createUser: async () => ({ id: 1 }),
+      deleteUser: async (id) => {
+        deletedId = id;
+        return id;
+      },
+    },
+  });
+  const server = app.listen(0);
+  const url = `http://127.0.0.1:${server.address().port}/api/users/42`;
+  try {
+    assert.equal((await fetch(url, { method: "DELETE" })).status, 401);
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: { authorization: "Bearer test-admin-token" },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { id: 42 });
+    assert.equal(deletedId, 42);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("sort allowlist and pagination limits", () => {
   assert.equal(orderFor({ sort: "constructor" }), "u.first_name ASC, u.id ASC");
   assert.equal(

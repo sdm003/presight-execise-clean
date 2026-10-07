@@ -273,9 +273,53 @@
           }
         }
       }
+    },
+    "/api/users/{id}": {
+      "delete": {
+        "tags": ["Users"],
+        "operationId": "deleteUser",
+        "summary": "Delete a user",
+        "description": "Deletes a user and its hobbies. This administrative operation requires the server-side bearer token configured by ADMIN_API_TOKEN.",
+        "security": [{ "adminBearer": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["id"],
+                  "properties": {
+                    "id": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/CorsForbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
     }
   },
   "components": {
+    "securitySchemes": {
+      "adminBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
     "headers": {
       "XRequestID": {
         "description": "Server-generated request identifier. Incoming client IDs are not trusted or echoed back.",
@@ -634,6 +678,33 @@
       }
     },
     "responses": {
+      "Unauthorized": {
+        "description": "A valid administrative bearer token is required.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": { "type": "string" }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": { "error": "Authorization required" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested user does not exist.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": { "error": "User not found" }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Request validation failed or the JSON body was malformed.",
         "headers": {

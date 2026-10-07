@@ -36,7 +36,7 @@ function createApp({
     next();
   });
   app.use("/api/users", express.json({ limit: "32kb" }));
-  mountUsers(app, repository);
+  mountUsers(app, repository, config);
   const ready = async (req, res) => {
     req.admission.hold();
     try {

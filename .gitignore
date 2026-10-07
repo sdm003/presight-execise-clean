@@ -36,3 +36,8 @@ yarn-error.log*
 # graphify (local dev only)
 graphify-out/
 **/graphify-out/
+
+# local-only load testing
+/load-test/
+/load-test-report.json
+/load-test-reports/
