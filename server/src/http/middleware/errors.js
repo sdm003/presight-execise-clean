@@ -1,6 +1,6 @@
 const { AppError, isUnavailable } = require("../../shared/errors");
 
-function errorHandler(log) {
+function errorHandler(log, database) {
   return (error, req, res, next) => {
     if (res.headersSent) return next(error);
     let status = 500;
@@ -26,7 +26,17 @@ function errorHandler(log) {
       res.setHeader("Retry-After", "1");
     }
     if (status >= 500)
-      log.error({ err: error, requestId: req.id }, "http.failed");
+      log.error(
+        {
+          err: error,
+          requestId: req.id,
+          method: req.method,
+          route: req.route?.path || "unmatched",
+          status,
+          pool: database?.stats?.(),
+        },
+        "http.failed",
+      );
     res.status(status).json({ error: message });
   };
 }

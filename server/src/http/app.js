@@ -50,7 +50,7 @@ function createApp({
   app.get("/api/ready", ready);
   app.use("/api", (_, res) => res.status(404).json({ error: "Not found" }));
   app.use(express.static(path.join(__dirname, "../../../client/dist")));
-  app.use(errorHandler(log));
+  app.use(errorHandler(log, database));
   return app;
 }
 

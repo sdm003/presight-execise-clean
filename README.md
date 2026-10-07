@@ -338,11 +338,12 @@ The old Node batch scheduler has been replaced; its `USER_COUNT`, `CONCURRENCY`,
 
 ```sh
 TARGET_URL=https://presight-execise-clean.vercel.app \
-PROFILE=baseline SCENARIO=read RATE=5 \
+PROFILE=baseline SCENARIO=read RATE=1 \
 node load-test/run.js
 ```
 
-Defaults: a separate 15-second read-only warmup, 30-second ramp-up, 120-second
+Defaults: 1 workload iteration/second, a separate 15-second read-only warmup,
+30-second ramp-up, 120-second
 hold, and 30-second ramp-down. `RATE` means workload iterations/second, not
 concurrent users. An iteration makes one list or create request and, optionally,
 one cleanup request. The open arrival-rate model does not reduce the offered
@@ -488,10 +489,23 @@ fail when PostgreSQL is unavailable. The application adds no authentication of
 its own: writes should be protected at the gateway, and there is no cluster-wide
 rate limiter claim here.
 
+The directory GET executes one parameterized SQL statement for the page, total,
+hobby facets and nationality facets. These share one PostgreSQL statement snapshot
+without an explicit read transaction or seven sequential database commands.
+Nationality options still ignore selected nationalities while respecting search
+and hobbies, including zero-count options.
+
 Tracing is implemented manually rather than through broad auto-instrumentation.
-When enabled, request logs include `requestId` plus correlated `traceId`/`spanId`,
-W3C trace headers are propagated, and manual spans cover HTTP requests, database
-transaction acquisition, transactions and individual queries. Span/log content is
+GET spans form `GET /api/users` -> `users.service.list` ->
+`users.repository.list` -> `db.acquire` / `db.query`; method boundaries include
+`code.function.name`. Writes retain their transaction spans.
+Each operation emits an `operation.completed` log with its name, duration and
+success/error outcome, even when tracing is disabled. Intermediate logs carry
+the server-generated `requestId`; enabled tracing adds `traceId`/`spanId`.
+`http.failed` includes method, route, status and local pool counters. Safe error
+codes distinguish `DB_QUEUE_FULL`, `DB_POOL_CLOSED` and `DB_ACQUIRE_FAILED`;
+`causeCode` exposes a sanitized underlying driver code, not its message.
+W3C trace headers are propagated. Span/log content is
 PII-conscious: no SQL text, SQL parameters, request bodies, raw URLs, or query
 strings are emitted. Exceptions set span status only. If tracing is enabled
 without `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, correlation still works locally but

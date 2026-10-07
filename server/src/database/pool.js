@@ -29,16 +29,24 @@ function createDatabase({
     return instance;
   }
   async function connect() {
-    if (closing) throw new AppError("Service unavailable", 503);
+    if (closing)
+      throw new AppError("Service unavailable", 503, "DB_POOL_CLOSED");
     const source = getPool();
-    if (inFlight >= capacity) throw new AppError("Service unavailable", 503);
+    if (inFlight >= capacity)
+      throw new AppError("Service unavailable", 503, "DB_QUEUE_FULL");
     inFlight++;
     let client;
     try {
-      client = await span("db.acquire", () => source.connect());
+      client = await span("db.acquire", () => source.connect(), {
+        "code.function.name": "connect",
+      });
     } catch (error) {
       inFlight--;
-      const unavailable = new AppError("Service unavailable", 503);
+      const unavailable = new AppError(
+        "Service unavailable",
+        503,
+        "DB_ACQUIRE_FAILED",
+      );
       unavailable.cause = error;
       throw unavailable;
     }
@@ -77,6 +85,7 @@ function createDatabase({
           {
             "db.system.name": "postgresql",
             "db.operation.name": operation,
+            "code.function.name": "query",
           },
         );
       },

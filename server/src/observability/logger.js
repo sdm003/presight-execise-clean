@@ -1,5 +1,7 @@
 const pino = require("pino");
+const { AsyncLocalStorage } = require("node:async_hooks");
 const { trace, context, isSpanContextValid } = require("@opentelemetry/api");
+const requestContext = new AsyncLocalStorage();
 
 // Do not serialize raw Error objects: database messages can contain SQL/data/URLs.
 function safeError(error) {
@@ -16,6 +18,10 @@ function safeError(error) {
       : "Error",
     ...(typeof error?.code === "string" && /^[A-Z0-9_]{2,20}$/.test(error.code)
       ? { code: error.code }
+      : {}),
+    ...(typeof error?.cause?.code === "string" &&
+    /^[A-Z0-9_]{2,20}$/.test(error.cause.code)
+      ? { causeCode: error.cause.code }
       : {}),
     ...(error?.name === "ConfigurationError" &&
     [
@@ -48,12 +54,15 @@ const logger = pino({
   base: undefined,
   mixin() {
     const span = trace.getSpan(context.active())?.spanContext();
-    return span && isSpanContextValid(span)
-      ? { traceId: span.traceId, spanId: span.spanId }
-      : {};
+    return {
+      ...requestContext.getStore(),
+      ...(span && isSpanContextValid(span)
+        ? { traceId: span.traceId, spanId: span.spanId }
+        : {}),
+    };
   },
   serializers: { err: safeError },
   redact: ["password", "authorization", "cookie", "DATABASE_URL"],
 });
 
-module.exports = { logger };
+module.exports = { logger, requestContext };

@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const { requestContext } = require("../../observability/logger");
 
 function requestLog(log) {
   return (req, res, next) => {
@@ -25,7 +26,7 @@ function requestLog(log) {
     };
     res.once("finish", complete);
     res.once("close", complete);
-    next();
+    requestContext.run({ requestId: req.id }, next);
   };
 }
 

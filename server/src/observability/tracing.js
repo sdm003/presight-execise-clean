@@ -17,6 +17,7 @@ const {
 const { resourceFromAttributes } = require("@opentelemetry/resources");
 const { W3CTraceContextPropagator } = require("@opentelemetry/core");
 const { tracingConfig } = require("../config");
+const { logger } = require("./logger");
 
 const propagator = new W3CTraceContextPropagator();
 let initialized;
@@ -62,13 +63,30 @@ function span(name, work, attributes = {}) {
   return trace
     .getTracer("presight-api")
     .startActiveSpan(name, { attributes }, async (current) => {
+      const started = performance.now();
+      let failed = false;
+      let failure;
       try {
         return await work(current);
       } catch (error) {
+        failed = true;
+        failure = error;
         // Exception messages, SQL and payloads may contain private data.
         current.setStatus({ code: SpanStatusCode.ERROR });
         throw error;
       } finally {
+        logger.info(
+          {
+            operation: name,
+            ...(attributes["db.operation.name"]
+              ? { dbOperation: attributes["db.operation.name"] }
+              : {}),
+            durationMs: Math.round(performance.now() - started),
+            outcome: failed ? "error" : "success",
+            ...(failed ? { err: failure } : {}),
+          },
+          "operation.completed",
+        );
         current.end();
       }
     });

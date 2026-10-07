@@ -17,7 +17,7 @@ function parseFilterValues(value) {
   );
 }
 
-function whereFor(query) {
+function whereFor(query, parameterOffset = 0) {
   const text = String(query.search || "")
     .replace(/\s+/g, " ")
     .trim()
@@ -27,7 +27,7 @@ function whereFor(query) {
   const params = [];
   const bind = (value) => {
     params.push(value);
-    return `$${params.length}`;
+    return `$${parameterOffset + params.length}`;
   };
   if (text)
     clauses.push(

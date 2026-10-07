@@ -217,6 +217,19 @@ test(
           );
           assert.equal((await get("sort=constructor")).pagination.total, 4);
           assert.equal((await get("page=99")).data.length, 0);
+          const missing = await get("search=does-not-exist");
+          assert.deepEqual(missing.pagination, {
+            page: 1,
+            limit: 40,
+            total: 0,
+            hasMore: false,
+          });
+          assert.deepEqual(missing.facets.hobbies, []);
+          assert.deepEqual(missing.facets.nationalities, [
+            { value: "American", count: 0 },
+            { value: "British", count: 0 },
+            { value: "French", count: 0 },
+          ]);
 
           await assert.rejects(
             transaction(async (client) => {
@@ -466,7 +479,36 @@ test(
             requestSpan.attributes["http.response.status_code"],
             200,
           );
-          assert.ok(spans.some((entry) => entry.name === "users.list"));
+          const serviceSpan = spans.find(
+            (entry) =>
+              entry.name === "users.service.list" &&
+              entry.parentSpanContext?.spanId ===
+                requestSpan.spanContext().spanId,
+          );
+          assert.ok(serviceSpan);
+          const repositorySpan = spans.find(
+            (entry) =>
+              entry.name === "users.repository.list" &&
+              entry.parentSpanContext?.spanId ===
+                serviceSpan.spanContext().spanId,
+          );
+          assert.ok(repositorySpan);
+          const querySpans = spans.filter(
+            (entry) =>
+              entry.name === "db.query" &&
+              entry.parentSpanContext?.spanId ===
+                repositorySpan.spanContext().spanId,
+          );
+          assert.equal(querySpans.length, 1);
+          assert.equal(querySpans[0].attributes["db.operation.name"], "SELECT");
+          assert.ok(
+            !spans.some(
+              (entry) =>
+                entry.name === "db.transaction" &&
+                entry.spanContext().traceId ===
+                  requestSpan.spanContext().traceId,
+            ),
+          );
           assert.ok(spans.some((entry) => entry.name === "db.transaction"));
           assert.ok(
             spans.some(

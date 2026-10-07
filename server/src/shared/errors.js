@@ -1,8 +1,9 @@
 class AppError extends Error {
-  constructor(message, status = 500) {
+  constructor(message, status = 500, code) {
     super(message);
     this.name = this.constructor.name;
     this.status = status;
+    if (code) this.code = code;
   }
 }
 

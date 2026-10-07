@@ -1,50 +1,66 @@
 const { transaction } = require("../../database/transaction");
 const { pool } = require("../../database/pool");
 const { whereFor, positiveInteger, orderFor } = require("./query");
+const { span } = require("../../observability/tracing");
 
 function createRepository({ database = pool } = {}) {
   async function listUsers(query) {
-    const { clause, params } = whereFor(query);
     const page = positiveInteger(query.page, 1, 100000);
     const limit = positiveInteger(query.limit, 40, 100);
     const nationalityScope = whereFor({ ...query, nationality: undefined });
-    // One snapshot keeps pagination and counts consistent with concurrent creations.
-    return transaction(async (client) => {
-      await client.query(
-        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
-      );
-      const { rows: totals } = await client.query(
-        `SELECT COUNT(*)::integer count FROM users u ${clause}`,
-        params,
-      );
-      const { rows } = await client.query(
-        `SELECT u.*, COALESCE(
-         (SELECT array_agg(h.hobby ORDER BY h.hobby) FROM hobbies h WHERE h.user_id = u.id),
-         ARRAY[]::text[]) hobbies
-       FROM (SELECT u.* FROM users u ${clause} ORDER BY ${orderFor(query)}
-         LIMIT $${params.length + 1} OFFSET $${params.length + 2}) u
-       ORDER BY ${orderFor(query)}`,
-        [...params, limit, (page - 1) * limit],
-      );
-      const { rows: hobbies } = await client.query(
-        `SELECT h.hobby value, COUNT(*)::integer count FROM users u JOIN hobbies h ON h.user_id = u.id ${clause}
-       GROUP BY h.hobby ORDER BY count DESC, value ASC LIMIT 20`,
-        params,
-      );
-      const { rows: nationalities } = await client.query(
-        `SELECT all_values.value, COALESCE(scoped.count, 0)::integer count
-       FROM (SELECT DISTINCT nationality value FROM users) all_values
-       LEFT JOIN (SELECT u.nationality value, COUNT(*)::integer count FROM users u ${nationalityScope.clause} GROUP BY u.nationality) scoped USING (value)
-       ORDER BY count DESC, value ASC LIMIT 20`,
-        nationalityScope.params,
-      );
-      const total = totals[0].count;
-      return {
-        data: rows,
-        pagination: { page, limit, total, hasMore: page * limit < total },
-        facets: { hobbies, nationalities },
-      };
-    }, database);
+    const nationalityFilter = whereFor(
+      { nationality: query.nationality },
+      nationalityScope.params.length,
+    );
+    const params = [...nationalityScope.params, ...nationalityFilter.params];
+    // One SQL statement shares a snapshot without holding a multi-command transaction.
+    return span(
+      "users.repository.list",
+      async () => {
+        const {
+          rows: [result],
+        } = await database.query(
+          `SELECT result.* FROM (WITH nationality_scope AS (
+           SELECT u.id, u.nationality FROM users u ${nationalityScope.clause}
+         ), filtered AS (
+           SELECT u.* FROM nationality_scope u ${nationalityFilter.clause}
+         ), page_users AS (
+           SELECT u.*, COALESCE(
+             (SELECT array_agg(h.hobby ORDER BY h.hobby) FROM hobbies h WHERE h.user_id = u.id),
+             ARRAY[]::text[]) hobbies
+           FROM users u JOIN filtered f ON f.id = u.id
+           ORDER BY ${orderFor(query)}
+           LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+         ), hobby_facets AS (
+           SELECT h.hobby value, COUNT(*)::integer count
+           FROM filtered f JOIN hobbies h ON h.user_id = f.id
+           GROUP BY h.hobby ORDER BY count DESC, value ASC LIMIT 20
+         ), nationality_facets AS (
+           SELECT all_values.value, COALESCE(scoped.count, 0)::integer count
+           FROM (SELECT DISTINCT nationality value FROM users) all_values
+           LEFT JOIN (
+             SELECT nationality value, COUNT(*)::integer count FROM nationality_scope GROUP BY nationality
+           ) scoped USING (value)
+           ORDER BY count DESC, value ASC LIMIT 20
+         )
+         SELECT (SELECT COUNT(*)::integer FROM filtered) total,
+           COALESCE((SELECT json_agg(u ORDER BY ${orderFor(query)}) FROM page_users u), '[]'::json) data,
+           COALESCE((SELECT json_agg(h ORDER BY h.count DESC, h.value ASC) FROM hobby_facets h), '[]'::json) hobbies,
+           COALESCE((SELECT json_agg(n ORDER BY n.count DESC, n.value ASC) FROM nationality_facets n), '[]'::json) nationalities) result`,
+          [...params, limit, (page - 1) * limit],
+        );
+        const { total } = result;
+        return {
+          data: result.data,
+          pagination: { page, limit, total, hasMore: page * limit < total },
+          facets: {
+            hobbies: result.hobbies,
+            nationalities: result.nationalities,
+          },
+        };
+      },
+      { "code.function.name": "listUsers" },
+    );
   }
 
   const createUser = (user) =>

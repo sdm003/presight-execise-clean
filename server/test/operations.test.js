@@ -137,6 +137,53 @@ test("repository module exposes default methods and factory", () => {
   assert.equal(typeof repositoryModule.createRepository, "function");
 });
 
+test("listUsers uses one query with offset bindings and no transaction", async () => {
+  const calls = [];
+  const row = {
+    total: 3,
+    data: [],
+    hobbies: [],
+    nationalities: [{ value: "British", count: 0 }],
+  };
+  const repository = repositoryModule.createRepository({
+    database: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        return { rows: [row] };
+      },
+      connect() {
+        assert.fail("GET must not open an explicit transaction");
+      },
+    },
+  });
+  assert.deepEqual(
+    await repository.listUsers({
+      search: "_%",
+      hobby: ["Reading", "Cycling"],
+      nationality: ["American", "British"],
+      page: 2,
+      limit: 2,
+    }),
+    {
+      data: [],
+      pagination: { page: 2, limit: 2, total: 3, hasMore: false },
+      facets: { hobbies: [], nationalities: row.nationalities },
+    },
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].params, [
+    "%\\_\\%%",
+    "Reading",
+    "Cycling",
+    ["American", "British"],
+    2,
+    2,
+  ]);
+  assert.match(calls[0].sql, /u\.nationality = ANY\(\$4::text\[\]\)/);
+  assert.match(calls[0].sql, /LIMIT \$5 OFFSET \$6/);
+  assert.ok(!calls[0].sql.includes("BEGIN"));
+});
+
 test("database pool wrapper is lazy, bounded, and preserves primary failures", async () => {
   const pending = [];
   let factoryCalls = 0;
@@ -178,7 +225,10 @@ test("database pool wrapper is lazy, bounded, and preserves primary failures", a
   const second = database.connect();
   await assert.rejects(
     database.connect(),
-    (error) => error instanceof AppError && error.status === 503,
+    (error) =>
+      error instanceof AppError &&
+      error.status === 503 &&
+      error.code === "DB_QUEUE_FULL",
   );
   assert.equal(factoryCalls, 1);
   assert.deepEqual(database.stats(), {
@@ -252,6 +302,7 @@ test("database pool wrapper is lazy, bounded, and preserves primary failures", a
     (error) =>
       error instanceof AppError &&
       error.status === 503 &&
+      error.code === "DB_ACQUIRE_FAILED" &&
       error.cause?.code === "ETIMEDOUT",
   );
   assert.equal(timeout.stats().inFlight, 0);
@@ -862,6 +913,13 @@ test("tracing extracts traceparent, sanitizes spans and exports request and data
     assert.equal(requestSpan.attributes["http.request.method"], "GET");
     assert.equal(requestSpan.attributes["http.route"], "/api/users");
     assert.equal(requestSpan.attributes["http.response.status_code"], 200);
+    const serviceSpan = spans.find(
+      (entry) =>
+        entry.name === "users.service.list" &&
+        entry.parentSpanContext?.spanId === requestSpan.spanContext().spanId,
+    );
+    assert.ok(serviceSpan);
+    assert.equal(serviceSpan.attributes["code.function.name"], "listUsers");
     assert.ok(
       spans.some(
         (entry) =>
@@ -1260,12 +1318,125 @@ test("CLI configuration failures identify the key without leaking secret values"
       timeout: 5000,
     });
     assert.equal(child.status, 1, child.stderr);
-    const record = JSON.parse(child.stdout.trim());
-    assert.equal(record.err.type, "ConfigurationError");
-    assert.equal(record.err.key, "DATABASE_URL");
+    const records = child.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.ok(records.length > 0);
+    for (const record of records) {
+      assert.equal(record.err.type, "ConfigurationError");
+      assert.equal(record.err.key, "DATABASE_URL");
+    }
     assert.ok(!child.stdout.includes("do-not-log"));
     assert.equal(child.stderr, "");
   }
+});
+
+test("operation logs correlate concurrent requests without tracing and sanitize pool failures", () => {
+  const child = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `
+    const { createApp } = require('./server/src/index');
+    const { createDatabase } = require('./server/src/database/pool');
+    const { createRepository } = require('./server/src/modules/users/repository');
+    let attempts = 0;
+    const database = createDatabase({
+      config: { max: 2 }, maxQueue: 0,
+      factory: () => ({
+        on() {},
+        async connect() {
+          const attempt = ++attempts;
+          await new Promise(resolve => setTimeout(resolve, attempt === 1 ? 20 : 5));
+          if (attempt === 1) throw Object.assign(Error('do-not-log SQL password'), {
+            code: 'ETIMEDOUT', detail: 'do-not-log'
+          });
+          return {
+            async query() { return { rows: [{ data: [], total: 0, hobbies: [], nationalities: [] }] }; },
+            release() {}
+          };
+        },
+        async end() {}
+      })
+    });
+    const server = createApp({ database, repository: createRepository({ database }) }).listen(0);
+    (async () => {
+      try {
+        const url = 'http://127.0.0.1:' + server.address().port + '/api/users?search=do-not-log';
+        const responses = await Promise.all([fetch(url), fetch(url)]);
+        console.log('RESULT ' + JSON.stringify(responses.map(response => ({
+          requestId: response.headers.get('x-request-id'), status: response.status
+        }))));
+      } finally {
+        await new Promise(resolve => server.close(resolve));
+        await database.end();
+      }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `,
+    ],
+    {
+      cwd: path.join(__dirname, "../.."),
+      env: {
+        ...process.env,
+        NODE_ENV: "test",
+        OTEL_ENABLED: "false",
+        CLIENT_ORIGIN: "",
+      },
+      encoding: "utf8",
+      timeout: 5000,
+    },
+  );
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stderr, "");
+  assert.ok(!child.stdout.includes("do-not-log"));
+  const lines = child.stdout.trim().split("\n");
+  const responses = JSON.parse(
+    lines.find((line) => line.startsWith("RESULT ")).slice(7),
+  );
+  assert.deepEqual(
+    responses.map((response) => response.status),
+    [503, 200],
+  );
+  assert.notEqual(responses[0].requestId, responses[1].requestId);
+  const records = lines
+    .filter((line) => !line.startsWith("RESULT "))
+    .map((line) => JSON.parse(line));
+  for (const response of responses) {
+    const operations = records.filter(
+      (record) =>
+        record.msg === "operation.completed" &&
+        record.requestId === response.requestId,
+    );
+    for (const operation of [
+      "db.acquire",
+      "users.repository.list",
+      "users.service.list",
+    ]) {
+      const record = operations.find(
+        (record) => record.operation === operation,
+      );
+      assert.ok(record, operation);
+      assert.equal(
+        record.outcome,
+        response.status === 200 ? "success" : "error",
+      );
+      assert.equal(typeof record.durationMs, "number");
+      assert.ok(record.durationMs >= 0);
+      assert.equal(record.traceId, undefined);
+    }
+  }
+  const failure = records.find((record) => record.msg === "http.failed");
+  assert.equal(failure.requestId, responses[0].requestId);
+  assert.equal(failure.err.code, "DB_ACQUIRE_FAILED");
+  assert.equal(failure.err.causeCode, "ETIMEDOUT");
+  assert.equal(failure.method, "GET");
+  assert.equal(failure.route, "/api/users");
+  assert.equal(failure.status, 503);
+  assert.equal(failure.pool.capacity, 2);
+  const query = records.find((record) => record.operation === "db.query");
+  assert.equal(query.requestId, responses[1].requestId);
+  assert.equal(query.dbOperation, "SELECT");
 });
 
 test("real process SIGTERM and fatal errors terminate cleanly with sanitized logs", async () => {
