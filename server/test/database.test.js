@@ -338,26 +338,18 @@ test(
 
           const or = await get("nationality=American&nationality=British");
           assert.equal(or.pagination.total, 3);
-          assert.ok(
-            or.facets.nationalities.some(
-              (entry) => entry.value === "French" && entry.count === 1,
-            ),
-          );
+          assert.deepEqual(or.facets.nationalities, [
+            { value: "American", count: 2 },
+            { value: "British", count: 1 },
+          ]);
 
           const combined = await get(
             "nationality=American&hobby=Reading&search=A",
           );
           assert.equal(combined.pagination.total, 1);
-          assert.ok(
-            combined.facets.nationalities.some(
-              (entry) => entry.value === "British" && entry.count === 1,
-            ),
-          );
-          assert.ok(
-            combined.facets.nationalities.some(
-              (entry) => entry.value === "French" && entry.count === 0,
-            ),
-          );
+          assert.deepEqual(combined.facets.nationalities, [
+            { value: "American", count: 1 },
+          ]);
           assert.equal(
             (await get(`search=${encodeURIComponent("_%\\")}`)).pagination
               .total,
@@ -377,11 +369,7 @@ test(
             hasMore: false,
           });
           assert.deepEqual(missing.facets.hobbies, []);
-          assert.deepEqual(missing.facets.nationalities, [
-            { value: "American", count: 0 },
-            { value: "British", count: 0 },
-            { value: "French", count: 0 },
-          ]);
+          assert.deepEqual(missing.facets.nationalities, []);
 
           await assert.rejects(
             transaction(async (client) => {

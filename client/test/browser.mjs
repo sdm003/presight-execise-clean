@@ -92,7 +92,7 @@ app.get("/api/users", async (req, res) => {
     },
     facets: {
       hobbies: facet(list.flatMap((user) => user.hobbies)),
-      nationalities: facet(fixtures.map((user) => user.nationality)),
+      nationalities: facet(list.map((user) => user.nationality)),
     },
   });
 });
