@@ -1,4 +1,5 @@
 import React, { Component } from "react";
+import { clientLog } from "../diagnostics.js";
 
 export default class ErrorBoundary extends Component {
   state = { failed: false };
@@ -7,8 +8,8 @@ export default class ErrorBoundary extends Component {
     return { failed: true };
   }
 
-  componentDidCatch() {
-    console.error("Directory UI failed to render.");
+  componentDidCatch(error) {
+    clientLog("ui.render.failed", {}, error);
   }
 
   render() {

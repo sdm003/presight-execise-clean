@@ -3,7 +3,11 @@ const path = require("node:path");
 const { transaction } = require("./transaction");
 const { pool } = require("./pool");
 
-const migrations = ["001-initial.sql", "002-query-indexes.sql"];
+const migrations = [
+  "001-initial.sql",
+  "002-query-indexes.sql",
+  "003-demo-seed.sql",
+];
 
 async function migrate(source = pool) {
   await transaction(async (client) => {

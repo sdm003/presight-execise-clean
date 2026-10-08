@@ -42,7 +42,12 @@ export function validatePage(body, page, seen = new Set()) {
     !validFacets(body.facets?.hobbies) ||
     !validFacets(body.facets?.nationalities)
   )
-    throw Error("Invalid directory response. Please try again.");
+    throw Object.assign(
+      Error("Invalid directory response. Please try again."),
+      {
+        code: "INVALID_RESPONSE",
+      },
+    );
   if (body.data.some((user) => seen.has(user.id)))
     throw Object.assign(Error("Directory changed. Please try again."), {
       code: "PAGE_OVERLAP",

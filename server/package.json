@@ -8,6 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "prestart": "npm run setup",
     "start": "node src/index.js",
     "setup": "node src/setup.js",
     "check": "prettier --check \"src/**/*.js\" \"scripts/**/*.js\" \"test/**/*.js\" \"openapi.json\"",

@@ -1,5 +1,9 @@
 # Presight Frontend Exercise
 
+For an evidence-based backend/frontend best-practices assessment and production
+readiness limitations, see [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)
+(in Russian).
+
 Build a small full-stack user directory application. The goal is to evaluate how you design a searchable, filterable, paginated UI backed by persisted data and clear API boundaries.
 
 The application should include:
@@ -17,9 +21,9 @@ Users need to browse a large directory of people, search by name, and narrow res
 
 ### Data Model
 
-Create users through `POST /api/users` and read persisted PostgreSQL records
-through `GET /api/users`. No external data API is required or configured, and
-the application does not generate or load sample users.
+The first setup seeds an empty PostgreSQL database with 1000 synthetic users.
+Read persisted records through `GET /api/users` and create additional users through
+`POST /api/users`. No external data API is required; avatars are image URLs only.
 
 Each user should have:
 
@@ -102,7 +106,7 @@ The text filter value, selected hobbies, selected nationalities, sort field, and
 ## Implementation Notes
 
 - Keep the database setup easy to run locally.
-- Include a documented, idempotent command that creates the PostgreSQL schema without modifying existing records.
+- Include a documented, idempotent command that creates the PostgreSQL schema and seeds an empty database without replacing existing records.
 - Include a `Dockerfile` and `docker-compose.yml` that can run the application locally.
 
 ## Evaluation Focus
@@ -122,7 +126,7 @@ Please provide:
 
 - Source code for the React client and Node.js server.
 - A `Dockerfile` and `docker-compose.yml`.
-- Instructions for schema setup, API-based data creation, and running locally.
+- Instructions for schema setup, initial seeding, API-based data creation, and running locally.
 - Instructions for running with Docker Compose.
 
 ## Running locally
@@ -141,10 +145,19 @@ export DATABASE_URL='******localhost:5432/directory'
 npm run setup
 ```
 
-`npm run setup` applies versioned, idempotent PostgreSQL DDL only. It uses the
-schema-scoped migration ledger in `schema_migrations`, preserves existing data,
-and is intended for explicit deployment/setup steps rather than application
-startup.
+`npm run setup` applies versioned PostgreSQL schema and seed migrations.
+`003-demo-seed.sql` creates exactly 1000 synthetic people with distinct name
+combinations, 32 nationalities and 0–10 distinct hobbies selected from 32 values.
+The generated dataset is reproducible, requires no network calls, and is inserted
+only when `users` is empty. A populated database is left unchanged.
+
+All migrations share a transaction and a schema-scoped advisory lock;
+the seed also locks user writes during its empty-database check.
+`schema_migrations` prevents duplicate or repeated seeding, including concurrent
+starts. Deleting records later does not cause them to reappear on restart.
+`npm start` (including the server workspace) runs setup before accepting requests.
+The Docker image does the same. Direct `node server/src/index.js` and Vercel
+imports do not run migrations; execute `npm run setup` once as a deployment step.
 
 Start the API and client in separate terminals:
 
@@ -160,6 +173,17 @@ Open the Vite URL shown in the second terminal. The API runs at
 `http://localhost:3001`. Vite proxies `/api` to that server, so the client uses
 same-origin requests in development and production. Only set `VITE_API_URL` when
 intentionally deploying a separate public API origin; never put secrets in it.
+
+Frontend diagnostics appear in browser DevTools, not Vercel Runtime Logs.
+API failures include method, fixed route, page, status, duration, server
+`X-Request-ID` and, when available, the server trace ID. UI render errors,
+uncaught JavaScript errors and unhandled promise rejections are reported too.
+Successful requests, ordinary cancellations, retries and dataset-change restarts
+use `console.debug` in development only. To enable these in a production build,
+set the public build-time flag `VITE_DEBUG_LOGS=true` (enable Verbose in DevTools).
+Diagnostics do not log search/filter values, user records, raw URLs, error
+messages or stacks, and do not send telemetry requests. Centralized browser
+monitoring requires a separately configured collector.
 
 The machine-readable OpenAPI 3.1 contract lives at `server/openapi.json`.
 
@@ -338,11 +362,12 @@ The old Node batch scheduler has been replaced; its `USER_COUNT`, `CONCURRENCY`,
 
 ```sh
 TARGET_URL=https://presight-execise-clean.vercel.app \
-PROFILE=baseline SCENARIO=read RATE=1 \
+PROFILE=baseline SCENARIO=read RATE=4 \
 node load-test/run.js
 ```
 
-Defaults: 1 workload iteration/second, a separate 15-second read-only warmup,
+Defaults: 4 workload iterations/second (4 requests/second for read-only traffic),
+a separate 15-second read-only warmup,
 30-second ramp-up, 120-second
 hold, and 30-second ramp-down. `RATE` means workload iterations/second, not
 concurrent users. An iteration makes one list or create request and, optionally,
@@ -467,7 +492,7 @@ refactoring the rest of the server into narrower modules:
 - `server/src/database/pool.js`: bounded pool acquisition and queue admission.
 - `server/src/database/transaction.js`: transaction wrapper with rollback cleanup.
 - `server/src/database/migrate.js`: explicit migration runner.
-- `server/src/database/migrations/*.sql`: deployment-run DDL only.
+- `server/src/database/migrations/*.sql`: versioned schema changes and one-time seed.
 - `server/src/observability/tracing.js`: manual OpenTelemetry initialization and
   HTTP/database spans.
 - `server/src/observability/logger.js`: structured logs with request/trace fields.
@@ -522,6 +547,8 @@ The schema migrations are intentionally simple and non-destructive:
   `users_first_name_id`, `users_last_name_id`, `users_age_id`,
   `users_nationality_id`, and `hobbies_hobby_user_id`, and drops the obsolete
   `hobbies_hobby` index if present.
+- `003-demo-seed.sql`: inserts the initial 1000-user dataset only into an empty
+  directory; existing records are never deleted or replaced by this migration.
 
 The migration ledger table is `schema_migrations(version, applied_at)`. Each run
 uses a schema-scoped advisory transaction lock, then executes DDL inside one
@@ -548,8 +575,8 @@ facet counting remain honest bounded SQL rather than a claim of infinite scale.
 - Use `NODE_ENV=production` in deployed environments.
 - Keep PostgreSQL reachable over private networking where possible and use
   least-privilege runtime credentials.
-- Run migrations as a separate deployment step; the app does not apply DDL on
-  normal startup.
+- Run migrations as a deployment step on Vercel; never from a request handler.
+  Local npm and Docker starts run the same idempotent setup before the listener.
 - Protect writes with gateway authentication/authorization, TLS and whatever
   rate-limiting policy your platform provides.
 - Reserve PostgreSQL connection headroom across replicas and background admin
@@ -560,19 +587,21 @@ facet counting remain honest bounded SQL rather than a claim of infinite scale.
 ## Running with Docker Compose
 
 The multi-stage image contains only production dependencies, backend source and
-built frontend assets, runs as the non-root `node` user and starts Node directly.
-Compose runs setup explicitly, then `exec`s Node so termination signals reach
+built frontend assets and runs as the non-root `node` user.
+The image runs setup explicitly, then `exec`s Node so termination signals reach
 the API rather than an npm shell.
 
 Docker Compose builds the client and API, starts PostgreSQL with a durable named
-volume, and initializes the schema without replacing existing data. Set your own
+volume, and initializes the schema plus the one-time seed without replacing
+existing data. Set your own
 `POSTGRES_PASSWORD` (use URL-safe characters, or encode reserved characters in
 the connection URL):
 
 ```sh
 export POSTGRES_PASSWORD='replace-with-a-local-password'
 docker compose up --build
-# In another terminal, create a user through the API:
+# The directory already contains 1000 users on a fresh volume.
+# In another terminal, optionally create an additional user through the API:
 curl -X POST http://localhost:3001/api/users \
   -H 'Content-Type: application/json' \
   -d '{"avatar":"https://example.com/avatar.png","first_name":"Ava","last_name":"Chen","age":25,"nationality":"American","hobbies":["Reading","Cycling"]}'

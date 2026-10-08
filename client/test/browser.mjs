@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import express from "express";
 import { createServer } from "vite";
+import { randomUUID } from "node:crypto";
 
 const binary = process.env.BROWSER_BIN;
 assert.ok(binary, "Set BROWSER_BIN to an existing Chrome/Chromium executable");
@@ -38,7 +39,13 @@ app.get("/api/users", async (req, res) => {
   const nationalities = values(q.nationality);
   const selectedHobbies = values(q.hobby);
   const page = Number(q.page);
-  requests.push({ ...q, page });
+  const requestId = randomUUID();
+  res.setHeader("X-Request-ID", requestId);
+  res.setHeader(
+    "traceparent",
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  );
+  requests.push({ ...q, page, requestId });
   if (failPage === page) {
     failPage = 0;
     return res.status(503).json({ error: "Test page failure" });
@@ -92,6 +99,8 @@ app.get("/api/users", async (req, res) => {
 app.use(express.static(path.resolve("dist")));
 const server = app.listen(0);
 const development = process.argv.includes("--dev");
+const verboseDiagnostics =
+  development || process.env.VITE_DEBUG_LOGS === "true";
 let vite;
 const profile = path.resolve(`.browser-profile-${process.pid}`);
 const chrome = spawn(
@@ -201,6 +210,15 @@ try {
   await cdp("Page.enable");
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `
+      window.clientDiagnostics = [];
+      for (const level of ['debug', 'error']) {
+        const original = console[level].bind(console);
+        console[level] = (...args) => {
+          if (typeof args[0] === 'string' && args[0].startsWith('client.'))
+            clientDiagnostics.push({ level, event: args[0], record: args[1] });
+          original(...args);
+        };
+      }
       window.gridMetrics = { reads: 0, mutations: 0, renders: 0 };
       const gridSnapshots = new WeakMap();
       window.fetchMetrics = { starts: 0, aborts: 0, active: 0 };
@@ -260,6 +278,38 @@ try {
   await until(
     `document.querySelector('.sentinel')?.textContent.includes('of 1000')`,
   );
+  const initialLogs = await evaluate(`clientDiagnostics`);
+  const completed = initialLogs.find(
+    (entry) =>
+      entry.event === "client.users.request.completed" &&
+      entry.record.outcome === "success",
+  );
+  if (verboseDiagnostics) {
+    assert.ok(completed, "Debug mode logs successful API operations");
+    assert.ok(
+      requests.some(
+        (request) => request.requestId === completed.record.requestId,
+      ),
+    );
+    assert.equal(completed.record.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
+    assert.equal(completed.level, "debug");
+    assert.equal(completed.record.status, 200);
+    assert.ok(completed.record.durationMs >= 0);
+    if (development)
+      assert.ok(
+        initialLogs.some(
+          (entry) =>
+            entry.record.outcome === "cancelled" && entry.level === "debug",
+        ),
+        "StrictMode cancellations are diagnostic events, not errors",
+      );
+  } else {
+    assert.equal(
+      initialLogs.length,
+      0,
+      "Production omits routine request logs",
+    );
+  }
   if (development) {
     assert.ok(
       await evaluate(`fetchMetrics.aborts >= 1`),
@@ -459,12 +509,29 @@ try {
   );
   await evaluate(`scrollTo(0, document.body.scrollHeight)`);
   await until(`document.querySelector('[role=alert]')`);
+  const failedRequest = await evaluate(`clientDiagnostics.find(entry =>
+    entry.event === 'client.users.request.completed' && entry.record.status === 503
+  )`);
+  assert.equal(failedRequest.level, "error");
+  assert.equal(failedRequest.record.page, 2);
+  assert.equal(failedRequest.record.errorCode, "HTTP_ERROR");
+  assert.ok(
+    requests.some(
+      (request) => request.requestId === failedRequest.record.requestId,
+    ),
+  );
   const beforeRetry = requests.length;
   await evaluate(`document.querySelector('[role=alert] button').click()`);
   await until(
     `document.querySelector('.sentinel').textContent.includes('80 of 1000')`,
   );
   assert.equal(requests[beforeRetry].page, 2, "retry resumes failed page");
+  if (verboseDiagnostics)
+    assert.ok(
+      await evaluate(`clientDiagnostics.some(entry =>
+      entry.event === 'client.users.request.retry' && entry.record.page === 2
+    )`),
+    );
   assert.equal(
     new Set(
       await evaluate(
@@ -582,6 +649,18 @@ try {
     [2, 1],
     "malformed reset page fails without an infinite restart loop",
   );
+  assert.ok(
+    await evaluate(`clientDiagnostics.some(entry =>
+    entry.event === 'client.users.request.completed' && entry.level === 'error' &&
+    entry.record.errorCode === 'INVALID_RESPONSE' && entry.record.status === 200
+  )`),
+  );
+  if (verboseDiagnostics)
+    assert.ok(
+      await evaluate(`clientDiagnostics.some(entry =>
+      entry.event === 'client.users.page.restart' && entry.level === 'debug'
+    )`),
+    );
   await evaluate(`document.querySelector('[role=alert] button').click()`);
   await until(
     `document.querySelector('.sentinel').textContent === '40 of 1003'`,
@@ -650,6 +729,11 @@ try {
   await until(
     `document.querySelector('[role=alert] h1')?.textContent.includes("couldn't be displayed")`,
   );
+  assert.ok(
+    await evaluate(`clientDiagnostics.some(entry =>
+    entry.event === 'client.ui.render.failed' && entry.level === 'error'
+  )`),
+  );
   await evaluate(`document.querySelector('[role=alert] button').click()`);
   await until(
     `document.querySelector('.sentinel')?.textContent === '40 of 1004'`,
@@ -658,6 +742,28 @@ try {
     await evaluate(`document.querySelector('[role=alert]')`),
     null,
     "UI error boundary resets and refetches clean data",
+  );
+  await evaluate(`{
+    window.dispatchEvent(new ErrorEvent('error', { error: new TypeError('private') }));
+    window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {
+      promise: Promise.resolve(), reason: Error('private')
+    }));
+  }`);
+  const diagnostics = await evaluate(`clientDiagnostics`);
+  for (const event of ["client.ui.error", "client.ui.unhandled_rejection"])
+    assert.ok(
+      diagnostics.some(
+        (entry) => entry.event === event && entry.level === "error",
+      ),
+    );
+  assert.ok(!JSON.stringify(diagnostics).includes("private"));
+  assert.ok(!JSON.stringify(diagnostics).includes("Test UI render failure"));
+  assert.ok(
+    !diagnostics.some(
+      (entry) =>
+        entry.level === "error" &&
+        ["cancelled", "stale"].includes(entry.record.outcome),
+    ),
   );
   console.log(
     `Browser checks passed (${development ? "development StrictMode" : "production"}): bounded virtualization, full scroll, resize, mobile filters, grid render/layout isolation, IME, URL restore, stale search, whitespace, no-op filters, empty results, page retry and dataset-change restarts.`,

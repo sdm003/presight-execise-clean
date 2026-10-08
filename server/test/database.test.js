@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { setTimeout: delay } = require("node:timers/promises");
+const { readFile } = require("node:fs/promises");
+const path = require("node:path");
 const { InMemorySpanExporter } = require("@opentelemetry/sdk-trace-base");
 
 const quiet = { info() {}, error() {}, fatal() {} };
@@ -60,7 +62,7 @@ test(
       ({ initializeTracing } = require("../src/observability/tracing"));
       ({ createApp } = require("../src/index"));
 
-      await migrate(pool);
+      await Promise.all([migrate(pool), migrate(pool), migrate(pool)]);
       exporter = new InMemorySpanExporter();
       telemetry = initializeTracing({
         exporter,
@@ -87,6 +89,156 @@ test(
         });
         return { response, json: await response.json() };
       };
+
+      await t.test(
+        "seed is complete, valid, concurrent-safe and never restores deleted records",
+        async () => {
+          const { validateUser } = require("../src/modules/users/validation");
+          const readSeed = () =>
+            pool.query(
+              `SELECT u.*, COALESCE(
+              (SELECT array_agg(h.hobby ORDER BY h.hobby) FROM hobbies h WHERE h.user_id = u.id),
+              ARRAY[]::text[]) hobbies FROM users u ORDER BY u.id`,
+            );
+          try {
+            const { rows } = await readSeed();
+            assert.equal(rows.length, 1000);
+            rows.forEach((row) => assert.doesNotThrow(() => validateUser(row)));
+            assert.equal(
+              new Set(rows.map((row) => `${row.first_name} ${row.last_name}`))
+                .size,
+              1000,
+            );
+            assert.equal(new Set(rows.map((row) => row.nationality)).size, 32);
+            assert.equal(new Set(rows.flatMap((row) => row.hobbies)).size, 32);
+            assert.equal(Math.min(...rows.map((row) => row.hobbies.length)), 0);
+            assert.equal(
+              Math.max(...rows.map((row) => row.hobbies.length)),
+              10,
+            );
+            const firstPage = await get();
+            assert.equal(firstPage.data.length, 40);
+            assert.equal(firstPage.pagination.total, 1000);
+            assert.equal(firstPage.pagination.hasMore, true);
+            for (const [facet, values] of [
+              ["nationalities", rows.map((row) => row.nationality)],
+              ["hobbies", rows.flatMap((row) => row.hobbies)],
+            ]) {
+              const expected = [...new Set(values)]
+                .map((value) => ({
+                  value,
+                  count: values.filter((item) => item === value).length,
+                }))
+                .sort(
+                  (a, b) =>
+                    b.count - a.count ||
+                    (a.value < b.value ? -1 : a.value > b.value ? 1 : 0),
+                )
+                .slice(0, 20);
+              assert.deepEqual(firstPage.facets[facet], expected);
+            }
+            await Promise.all([migrate(pool), migrate(pool)]);
+            assert.deepEqual((await readSeed()).rows, rows);
+            await pool.query("DELETE FROM users WHERE id = $1", [rows[0].id]);
+            await migrate(pool);
+            assert.equal((await get()).pagination.total, 999);
+          } finally {
+            // Keep the existing API fixtures isolated from the initial seed.
+            await pool.query("TRUNCATE users RESTART IDENTITY CASCADE");
+          }
+        },
+      );
+
+      await t.test(
+        "seed preserves populated databases and failed migration rolls back atomically",
+        async () => {
+          const upgradeSchema = `${schema}_upgrade`;
+          await admin.query(`CREATE SCHEMA ${upgradeSchema}`);
+          const upgrade = new Pool({
+            ...connectionConfig(),
+            options: `-c search_path=${upgradeSchema}`,
+          });
+          try {
+            await upgrade.query(
+              await readFile(
+                path.join(
+                  __dirname,
+                  "../src/database/migrations/001-initial.sql",
+                ),
+                "utf8",
+              ),
+            );
+            const {
+              rows: [existing],
+            } = await upgrade.query(
+              `INSERT INTO users (avatar, first_name, last_name, age, nationality)
+               VALUES ('https://example.com/real.png', 'Existing', 'Person', 30, 'French') RETURNING *`,
+            );
+            await upgrade.query("INSERT INTO hobbies VALUES ($1, 'Reading')", [
+              existing.id,
+            ]);
+            await migrate(upgrade);
+            assert.deepEqual(
+              (await upgrade.query("SELECT * FROM users")).rows,
+              [existing],
+            );
+            assert.equal(
+              (await upgrade.query("SELECT * FROM hobbies")).rows.length,
+              1,
+            );
+            await upgrade.query("TRUNCATE users RESTART IDENTITY CASCADE");
+            await migrate(upgrade);
+            assert.equal(
+              (await upgrade.query("SELECT COUNT(*)::integer count FROM users"))
+                .rows[0].count,
+              0,
+            );
+            await upgrade.query(
+              "DELETE FROM schema_migrations WHERE version = '003-demo-seed.sql'",
+            );
+            await upgrade.query(
+              "ALTER TABLE hobbies ADD CONSTRAINT reject_seed CHECK (hobby <> 'Reading')",
+            );
+            await assert.rejects(
+              migrate(upgrade),
+              (error) => error.code === "23514",
+            );
+            assert.equal(
+              (await upgrade.query("SELECT COUNT(*)::integer count FROM users"))
+                .rows[0].count,
+              0,
+            );
+            assert.equal(
+              (
+                await upgrade.query(
+                  "SELECT COUNT(*)::integer count FROM hobbies",
+                )
+              ).rows[0].count,
+              0,
+            );
+            assert.equal(
+              (
+                await upgrade.query(
+                  "SELECT * FROM schema_migrations WHERE version = '003-demo-seed.sql'",
+                )
+              ).rows.length,
+              0,
+            );
+            await upgrade.query(
+              "ALTER TABLE hobbies DROP CONSTRAINT reject_seed",
+            );
+            await Promise.all([migrate(upgrade), migrate(upgrade)]);
+            assert.equal(
+              (await upgrade.query("SELECT COUNT(*)::integer count FROM users"))
+                .rows[0].count,
+              1000,
+            );
+          } finally {
+            await upgrade.end();
+            await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
+          }
+        },
+      );
 
       await t.test(
         "atomic creation, filtering, sorting, pagination and rollback stay correct after migrate(pool)",
@@ -267,7 +419,7 @@ test(
           );
           assert.deepEqual(
             versions.rows.map((row) => row.version),
-            ["001-initial.sql", "002-query-indexes.sql"],
+            ["001-initial.sql", "002-query-indexes.sql", "003-demo-seed.sql"],
           );
 
           const indexes = await pool.query(

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, normalizeSearch, stateParams, writeState } from "./state";
 import { validatePage } from "./users.js";
+import { clientLog } from "./diagnostics.js";
 
 export const useUrlSync = (state) =>
   useEffect(() => writeState(state), [state]);
@@ -49,25 +50,46 @@ export const useUsers = (state) => {
       controller = new AbortController();
       setStatus("loading");
       setError("");
+      let attempt;
       try {
         for (;;) {
           setPage(nextPage);
           const q = new URLSearchParams(query);
           q.set("page", nextPage);
+          attempt = { page: nextPage, started: performance.now() };
           const response = await fetch(`${api}/api/users?${q}`, {
             signal: controller.signal,
           });
-          if (!response.ok) throw Error(`Request failed (${response.status})`);
+          Object.assign(attempt, {
+            status: response.status,
+            requestId: response.headers.get("X-Request-ID"),
+            traceparent: response.headers.get("traceparent"),
+          });
+          if (!response.ok)
+            throw Object.assign(Error(`Request failed (${response.status})`), {
+              code: "HTTP_ERROR",
+            });
           const body = await response.json();
-          if (!isCurrent()) return;
+          if (!isCurrent()) {
+            clientLog("users.request.completed", {
+              ...attempt,
+              outcome: "stale",
+            });
+            return;
+          }
           let data;
           try {
             data = validatePage(body, nextPage, seen);
           } catch (e) {
             if (nextPage === 1 || e.code !== "PAGE_OVERLAP") throw e;
           }
+          clientLog("users.request.completed", {
+            ...attempt,
+            outcome: "success",
+          });
           // OFFSET pages can shift between snapshots; restart once, within this request.
           if (nextPage > 1 && (!data || data.pagination.total !== total)) {
+            clientLog("users.page.restart", { page: nextPage });
             currentPage = 0;
             hasMore = false;
             seen.clear();
@@ -87,6 +109,19 @@ export const useUsers = (state) => {
           break;
         }
       } catch (e) {
+        clientLog(
+          "users.request.completed",
+          {
+            ...attempt,
+            outcome:
+              controller.signal.aborted || e.name === "AbortError"
+                ? "cancelled"
+                : isCurrent()
+                  ? "error"
+                  : "stale",
+          },
+          e,
+        );
         if (isCurrent() && e.name !== "AbortError") {
           failed = true;
           setError(e.message);
@@ -100,7 +135,10 @@ export const useUsers = (state) => {
       loadMore: () => {
         if (hasMore && !failed) void request(currentPage + 1);
       },
-      retry: () => void request(currentPage + 1),
+      retry: () => {
+        clientLog("users.request.retry", { page: currentPage + 1 });
+        void request(currentPage + 1);
+      },
     };
     void request(1);
     return () => {

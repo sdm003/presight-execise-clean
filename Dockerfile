@@ -19,4 +19,4 @@ COPY --from=build --chown=node:node /app/client/package.json ./client/package.js
 COPY --from=build --chown=node:node /app/client/dist ./client/dist
 USER node
 EXPOSE 3001
-CMD ["node", "server/src/index.js"]
+CMD ["sh", "-c", "node server/src/setup.js && exec node server/src/index.js"]
