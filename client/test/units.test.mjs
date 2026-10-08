@@ -158,3 +158,43 @@ test("page validation rejects duplicates, wrong pages and malformed metadata", (
     });
   }
 });
+
+test("page validation accepts full and terminal partial pages", () => {
+  const user = (id) => ({
+    id,
+    avatar: "",
+    first_name: `First ${id}`,
+    last_name: "Last",
+    nationality: "French",
+    age: 30,
+    hobbies: ["Reading"],
+  });
+  const facets = {
+    hobbies: [{ value: "Reading", count: 40 }],
+    nationalities: [],
+  };
+  const full = {
+    data: Array.from({ length: 40 }, (_, index) => user(index + 1)),
+    pagination: { page: 1, limit: 40, total: 41, hasMore: true },
+    facets,
+  };
+  assert.equal(validatePage(full, 1).data.length, 40);
+
+  const terminal = {
+    data: [user(41)],
+    pagination: { page: 2, limit: 40, total: 41, hasMore: false },
+    facets,
+  };
+  assert.equal(
+    validatePage(terminal, 2, new Set(full.data.map((item) => item.id))).data
+      .length,
+    1,
+  );
+  assert.throws(() =>
+    validatePage(
+      { ...terminal, data: [] },
+      2,
+      new Set(full.data.map((item) => item.id)),
+    ),
+  );
+});

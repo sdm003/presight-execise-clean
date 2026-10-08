@@ -190,6 +190,19 @@ test("sort allowlist and pagination limits", () => {
   assert.equal(positiveInteger("-1", 40, 100), 40);
 });
 
+test("sort fields normalize direction and invalid pagination values", () => {
+  for (const sort of ["first_name", "last_name", "age", "nationality"]) {
+    assert.match(orderFor({ sort, direction: "DESC" }), / DESC, u\.id ASC$/);
+    assert.match(
+      orderFor({ sort, direction: "unexpected" }),
+      / ASC, u\.id ASC$/,
+    );
+  }
+  for (const value of [undefined, "", "NaN", "1.5", "0", "-2", "Infinity"])
+    assert.equal(positiveInteger(value, 7, 100), 7);
+  assert.equal(positiveInteger("1", 7, 100), 1);
+});
+
 test("service validates create input before repository and passes list query through", async () => {
   let listedWith;
   let createdWith;
@@ -214,6 +227,17 @@ test("service validates create input before repository and passes list query thr
   assert.deepEqual(createdWith.hobbies, ["Reading", "Cycling"]);
 
   await assert.rejects(service.createUser({}), /avatar/);
+});
+
+test("service maps a missing delete result to a 404 AppError", async () => {
+  const service = createService({
+    deleteUser: async () => null,
+  });
+  await assert.rejects(service.deleteUser(42), (error) => {
+    assert.equal(error.status, 404);
+    assert.equal(error.message, "User not found");
+    return true;
+  });
 });
 
 test("POST invalid data and malformed JSON return explicit 400 without database", async () => {
@@ -257,6 +281,49 @@ test("POST invalid data and malformed JSON return explicit 400 without database"
     assert.deepEqual(await missing.json(), { error: "Not found" });
     assert.equal(databaseReads, 0);
     assert.equal(writes, 0);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("POST rejects non-JSON content and DELETE rejects invalid ids without repository calls", async () => {
+  let writes = 0;
+  let deletes = 0;
+  const app = createApp({
+    config: { mode: "test", origin: "" },
+    log: quiet,
+    repository: {
+      listUsers: async () => ({
+        data: [],
+        pagination: { page: 1, limit: 40, total: 0, hasMore: false },
+        facets: { hobbies: [], nationalities: [] },
+      }),
+      createUser: async () => {
+        writes++;
+        return { id: 1 };
+      },
+      deleteUser: async () => {
+        deletes++;
+        return 1;
+      },
+    },
+  });
+  const server = app.listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}/api/users`;
+    const contentType = await fetch(base, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(user),
+    });
+    assert.equal(contentType.status, 415);
+    for (const id of ["0", "-1", "not-a-number", "9007199254740992"]) {
+      const response = await fetch(`${base}/${id}`, { method: "DELETE" });
+      assert.equal(response.status, 400);
+    }
+    assert.equal(writes, 0);
+    assert.equal(deletes, 0);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
