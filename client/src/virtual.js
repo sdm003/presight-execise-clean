@@ -1,6 +1,5 @@
 export const CARD_HEIGHT = 142;
 export const GAP = 14;
-// ponytail: fixed-height, truncated cards; use measured rows if full wrapping is needed.
 const STRIDE = CARD_HEIGHT + GAP;
 
 export function rowWindow(count, columns, scrollY, offset, viewport) {
