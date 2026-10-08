@@ -12,7 +12,7 @@ import {
 
 test("URL state normalizes search, deduplicates and limits filters, and round-trips", () => {
   const state = readState(
-    "?search=%20Ava%20%20Chen%20&hobby=Reading&hobby=Reading&hobby=&nationality=French&sort=unknown&direction=invalid",
+    "?search=%20Ava%20%20Chen%20&hobby=Reading,Reading,&nationality=French&sort=unknown&direction=invalid",
   );
   assert.deepEqual(state, {
     search: "Ava Chen",
@@ -25,7 +25,10 @@ test("URL state normalizes search, deduplicates and limits filters, and round-tr
   assert.equal(normalizeSearch(" ".repeat(20)), "");
   assert.equal(normalizeSearch("a".repeat(101)).length, 100);
   const many = new URLSearchParams();
-  for (let i = 0; i < 25; i++) many.append("hobby", `Hobby ${i}`);
+  many.set(
+    "hobby",
+    Array.from({ length: 25 }, (_, i) => `Hobby ${i}`).join(","),
+  );
   assert.equal(readState(many.toString()).hobbies.length, 20);
   const previous = globalThis.history;
   let url;
@@ -48,15 +51,15 @@ test("URL state normalizes search, deduplicates and limits filters, and round-tr
   }
 });
 
-test("client URL and API serialization use identical repeated filter keys", () => {
+test("client URL and API serialization use comma-separated filter values", () => {
   const state = {
     ...readState(""),
-    hobbies: ["Arts, crafts", "A & B", "Reading"],
-    nationalities: ["A,B", "French"],
+    hobbies: ["Arts", "crafts", "A & B", "Reading"],
+    nationalities: ["A", "B", "French"],
   };
   const params = stateParams(state);
-  assert.deepEqual(params.getAll("hobby"), state.hobbies);
-  assert.deepEqual(params.getAll("nationality"), state.nationalities);
+  assert.equal(params.get("hobby"), state.hobbies.join(","));
+  assert.equal(params.get("nationality"), state.nationalities.join(","));
   assert.equal(params.has("hobbies"), false);
   assert.equal(params.has("nationalities"), false);
   assert.deepEqual(readState(params.toString()), state);

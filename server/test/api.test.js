@@ -101,11 +101,11 @@ test("filters deduplicate repeated values and cap each list to 20 entries", () =
   assert.equal(query.params.slice(1).length, 20);
 });
 
-test("filter values preserve commas and trim single and repeated strings", () => {
+test("filter values split comma-separated strings and trim values", () => {
   assert.deepEqual(
     whereFor({ nationality: [" A,B ", "A,B", ""], hobby: "Arts, crafts" })
       .params,
-    [["A,B"], "Arts, crafts"],
+    [["A", "B"], "Arts", "crafts"],
   );
   for (const value of [null, 12, {}, ["Reading", 12]])
     assert.throws(() => whereFor({ hobby: value }), {
@@ -118,7 +118,7 @@ test("filter values preserve commas and trim single and repeated strings", () =>
   );
 });
 
-test("HTTP repeated filter keys reach parameterized queries without CSV splitting", async () => {
+test("HTTP comma-separated filter values reach parameterized queries", async () => {
   const app = createApp({
     log: quiet,
     repository: { listUsers: async (query) => whereFor(query) },
@@ -126,21 +126,20 @@ test("HTTP repeated filter keys reach parameterized queries without CSV splittin
   const server = app.listen(0);
   try {
     const params = new URLSearchParams();
-    for (const value of ["Reading", "Arts, crafts", " Reading "])
-      params.append("hobby", value);
-    for (const value of ["A,B", "French", "French"])
-      params.append("nationality", value);
+    params.set("hobby", "Reading,Arts, crafts, Reading");
+    params.set("nationality", "A,B,French,French");
     const response = await fetch(
       `http://127.0.0.1:${server.address().port}/api/users?${params}`,
     );
     assert.equal(response.status, 200);
     const result = await response.json();
     assert.deepEqual(result.params, [
-      ["A,B", "French"],
+      ["A", "B", "French"],
       "Reading",
-      "Arts, crafts",
+      "Arts",
+      "crafts",
     ]);
-    assert.equal((result.clause.match(/EXISTS/g) || []).length, 2);
+    assert.equal((result.clause.match(/EXISTS/g) || []).length, 3);
     assert.match(result.clause, /ANY/);
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -28,14 +28,12 @@ let firstPageDelay = 0;
 const app = express();
 app.get("/api/users", async (req, res) => {
   const q = req.query;
-  assert.equal(q.hobbies, undefined, "API must use repeated hobby keys");
-  assert.equal(
-    q.nationalities,
-    undefined,
-    "API must use repeated nationality keys",
-  );
   const values = (value) =>
-    value === undefined ? [] : Array.isArray(value) ? value : [value];
+    value === undefined
+      ? []
+      : (Array.isArray(value) ? value : [value])
+          .flatMap((item) => item.split(","))
+          .filter(Boolean);
   const nationalities = values(q.nationality);
   const selectedHobbies = values(q.hobby);
   const page = Number(q.page);
@@ -692,11 +690,11 @@ try {
       [...labels].find(n => n.querySelector('span').textContent === hobby).querySelector('input').click();
   }`);
   await until(
-    `document.querySelector('.results').getAttribute('aria-busy') === 'false' && new URLSearchParams(location.search).getAll('hobby').length === 2`,
+    `document.querySelector('.results').getAttribute('aria-busy') === 'false' && new URLSearchParams(location.search).get('hobby') === 'Reading,Cycling'`,
   );
   assert.deepEqual(
-    await evaluate(`new URLSearchParams(location.search).getAll('hobby')`),
-    ["Reading", "Cycling"],
+    await evaluate(`new URLSearchParams(location.search).get('hobby')`),
+    "Reading,Cycling",
     "successive synchronous filter toggles preserve both selections",
   );
   await input("pending-draft");

@@ -3,16 +3,19 @@ export const validSorts = ["first_name", "last_name", "age", "nationality"];
 export const normalizeSearch = (value) =>
   value.replace(/\s+/g, " ").trim().slice(0, 100);
 
+const readFilter = (q, key) =>
+  [...new Set(q.getAll(key).flatMap((value) => value.split(","))).values()]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+
 export const readState = (search = location.search) => {
   const q = new URLSearchParams(search);
   const sort = q.get("sort");
   return {
     search: normalizeSearch(q.get("search") || ""),
-    hobbies: [...new Set(q.getAll("hobby").filter(Boolean))].slice(0, 20),
-    nationalities: [...new Set(q.getAll("nationality").filter(Boolean))].slice(
-      0,
-      20,
-    ),
+    hobbies: readFilter(q, "hobby"),
+    nationalities: readFilter(q, "nationality"),
     sort: validSorts.includes(sort) ? sort : "first_name",
     direction: q.get("direction") === "desc" ? "desc" : "asc",
   };
@@ -33,8 +36,9 @@ export const changeState = (state, patch) => {
 export const stateParams = (state) => {
   const q = new URLSearchParams();
   if (state.search) q.set("search", state.search);
-  state.hobbies.forEach((v) => q.append("hobby", v));
-  state.nationalities.forEach((v) => q.append("nationality", v));
+  if (state.hobbies.length) q.set("hobby", state.hobbies.join(","));
+  if (state.nationalities.length)
+    q.set("nationality", state.nationalities.join(","));
   q.set("sort", state.sort);
   q.set("direction", state.direction);
   return q;

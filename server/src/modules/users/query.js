@@ -11,10 +11,14 @@ function parseFilterValues(value) {
     value === undefined ? [] : Array.isArray(value) ? value : [value];
   if (values.some((item) => typeof item !== "string"))
     throw new ValidationError("Filter values must be strings");
-  return [...new Set(values.map((item) => item.trim()).filter(Boolean))].slice(
-    0,
-    20,
-  );
+  return [
+    ...new Set(
+      values
+        .flatMap((item) => item.split(","))
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 20);
 }
 
 function whereFor(query, parameterOffset = 0) {
