@@ -229,9 +229,9 @@ for AND filtering. Values are trimmed, empty entries and duplicates ignored, and
 only the first 20 unique values are used. Commas are literal characters, not
 separators. This replaces the previous plural CSV query parameters; API consumers
 must send the singular repeated keys. JSON user/facet fields remain unchanged.
-Nationality facet counts reflect the complete active result set, including the
-selected nationality filters. Selected values remain removable in the client
-even when they fall outside the returned top 20.
+Nationality facet counts intentionally ignore the active
+nationality filter while still respecting the current search and hobbies so the
+full choice set remains stable.
 
 Creation is atomic. Invalid input returns `400`; disallowed browser origins
 return `403`; malformed JSON returns `400`; payloads over 32 KiB `413`;
@@ -517,7 +517,8 @@ rate limiter claim here.
 The directory GET executes one parameterized SQL statement for the page, total,
 hobby facets and nationality facets. These share one PostgreSQL statement snapshot
 without an explicit read transaction or seven sequential database commands.
-Both facet lists are calculated from the active filtered result set.
+Nationality options still ignore selected nationalities while respecting search
+and hobbies, including zero-count options.
 
 Tracing is implemented manually rather than through broad auto-instrumentation.
 GET spans form `GET /api/users` -> `users.service.list` ->

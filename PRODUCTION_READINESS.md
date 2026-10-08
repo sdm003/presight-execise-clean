@@ -28,17 +28,17 @@ production-ready.** В самом API нет аутентификации и а�
 
 ### Оценка по направлениям
 
-| Направление                         | Оценка                                  | Что ограничивает вывод                                                                 |
-| ----------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
-| Архитектура небольшого приложения   | Хорошая, соразмерная задаче             | Пока один простой домен; это не проверка архитектуры сложной системы                   |
-| Корректность фильтров и сортировки  | Хорошая                                 | Database engine отличается от исходного ТЗ (PostgreSQL вместо SQLite)                  |
-| Работа с БД и аварийными сценариями | Хорошая                                 | Ограничения действуют на экземпляр приложения, не на весь deployment                   |
-| Frontend state и запросы            | Хорошая                                 | Нет собственного request deadline и универсальной защиты от изменений между страницами |
-| Виртуализация и поведение UI        | Хорошая для фиксированных карточек      | Не измеренная поддержка миллионов загруженных записей или произвольных высот           |
-| Observability                       | Полезная базовая реализация             | Наличие кода не означает настроенный collector, alerts и serverless delivery           |
-| Публичные операции записи           | Не готово без внешнего контроля доступа | POST и DELETE не проверяют права пользователя                                          |
-| CI и воспроизводимость проверки     | Есть команды и тесты                    | В репозитории нет workflow, который принудительно запускает их при изменениях          |
-| Эксплуатационная готовность         | Частичная                               | Backups, restore, региональность и capacity planning не подтверждены                   |
+| Направление | Оценка | Что ограничивает вывод |
+|---|---|---|
+| Архитектура небольшого приложения | Хорошая, соразмерная задаче | Пока один простой домен; это не проверка архитектуры сложной системы |
+| Корректность фильтров и сортировки | Хорошая | Nationality facets намеренно отличаются от исходного ТЗ |
+| Работа с БД и аварийными сценариями | Хорошая | Ограничения действуют на экземпляр приложения, не на весь deployment |
+| Frontend state и запросы | Хорошая | Нет собственного request deadline и универсальной защиты от изменений между страницами |
+| Виртуализация и поведение UI | Хорошая для фиксированных карточек | Не измеренная поддержка миллионов загруженных записей или произвольных высот |
+| Observability | Полезная базовая реализация | Наличие кода не означает настроенный collector, alerts и serverless delivery |
+| Публичные операции записи | Не готово без внешнего контроля доступа | POST и DELETE не проверяют права пользователя |
+| CI и воспроизводимость проверки | Есть команды и тесты | В репозитории нет workflow, который принудительно запускает их при изменениях |
+| Эксплуатационная готовность | Частичная | Backups, restore, региональность и capacity planning не подтверждены |
 
 Здесь намеренно нет оценки «8/10» или «готово на 90%»: без заданных SLO,
 модели угроз и условий эксплуатации такие числа создают ложную точность.
@@ -515,16 +515,16 @@ code, как ошибки pool — диагностика отказов пок�
 
 В последних выполненных проверках этой рабочей копии:
 
-| Проверка                                | Результат              | Что это доказывает                                                                            |
-| --------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------- |
-| Server tests с изолированным PostgreSQL | 45 passed, без skipped | Проверенные HTTP, SQL, lifecycle и seed-сценарии работают в тестовом окружении                |
-| Client unit tests                       | 7 passed               | URL/state, window math, response validation и diagnostics выдерживают указанные проверки      |
-| Локальный k6 test suite                 | 4 passed               | Конфигурация, contract checks, cleanup и threshold failures работают на тестовом HTTP-сервере |
-| Browser suite, обычный production build | Passed                 | Проверяемые scrolling, states, URL, recovery и error diagnostics работают в Chrome            |
-| Browser suite, development StrictMode   | Passed                 | В том числе cleanup/cancellation и verbose diagnostics                                        |
-| Browser suite, opt-in production debug  | Passed                 | Build-time debug flag действительно меняет diagnostic output                                  |
-| Frontend production build               | Passed                 | Клиент собирается                                                                             |
-| Локальный npm startup с новой БД        | GET вернул total=1000  | prestart действительно применяет schema и seed до обслуживания запросов                       |
+| Проверка | Результат | Что это доказывает |
+|---|---|---|
+| Server tests с изолированным PostgreSQL | 45 passed, без skipped | Проверенные HTTP, SQL, lifecycle и seed-сценарии работают в тестовом окружении |
+| Client unit tests | 7 passed | URL/state, window math, response validation и diagnostics выдерживают указанные проверки |
+| Локальный k6 test suite | 4 passed | Конфигурация, contract checks, cleanup и threshold failures работают на тестовом HTTP-сервере |
+| Browser suite, обычный production build | Passed | Проверяемые scrolling, states, URL, recovery и error diagnostics работают в Chrome |
+| Browser suite, development StrictMode | Passed | В том числе cleanup/cancellation и verbose diagnostics |
+| Browser suite, opt-in production debug | Passed | Build-time debug flag действительно меняет diagnostic output |
+| Frontend production build | Passed | Клиент собирается |
+| Локальный npm startup с новой БД | GET вернул total=1000 | prestart действительно применяет schema и seed до обслуживания запросов |
 
 Это результаты предыдущих проверок в этой сессии, а не новый benchmark при
 написании документа. Подсчёт server tests включает integration subtests.
@@ -563,10 +563,10 @@ error thresholds и проверкой dropped workload iterations.
 
 ### Исторические measurements до текущей GET optimization
 
-| Run                        | Workload                               | Workload errors | Read p95 | Dropped workload iterations |
-| -------------------------- | -------------------------------------- | --------------- | -------- | --------------------------- |
-| `2026-10-07T13-40-59-528Z` | Baseline до 5 iterations/s, hold 240 s | 26.27%          | 7545 ms  | 9                           |
-| `2026-10-07T14-15-18-843Z` | Baseline до 1 iteration/s, hold 20 s   | 0%              | 1767 ms  | 0                           |
+| Run | Workload | Workload errors | Read p95 | Dropped workload iterations |
+|---|---|---|---|---|
+| `2026-10-07T13-40-59-528Z` | Baseline до 5 iterations/s, hold 240 s | 26.27% | 7545 ms | 9 |
+| `2026-10-07T14-15-18-843Z` | Baseline до 1 iteration/s, hold 20 s | 0% | 1767 ms | 0 |
 
 Во втором run было только 24 workload requests. В первом — 1340 workload
 requests; 1355 total HTTP requests включали также setup/warmup.
@@ -637,27 +637,27 @@ release/setup step и подтверждённая стратегия telemetry 
 Это не оценка людей по должности. Таблица сравнивает распространённый
 happy-path вариант с защитами конкретного приложения.
 
-| Типичная проблема                                         | Что сделано здесь                                        | Оставшаяся граница                                             |
-| --------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| Старый search response перезаписывает новый               | Abort + current query + active effect                    | Нет собственного fetch deadline                                |
-| Observer одновременно грузит одну страницу дважды         | Синхронный busy guard                                    | Отдельные UI-сессии всё равно создают отдельные запросы        |
-| Нестабильный порядок одинакового возраста                 | Финальный `id ASC`                                       | Concurrent writes могут сдвинуть OFFSET                        |
-| COUNT, page и facets относятся к разным моментам          | Один SQL statement snapshot                              | Между страницами общего snapshot нет                           |
-| Hobbies на карточках порождают N+1 queries                | Сбор hobbies внутри SQL                                  | Общая стоимость SQL всё равно зависит от dataset               |
-| Хобби созданы частично                                    | Общая transaction с user insert                          | Прямые внешние writers должны соблюдать ограничения            |
-| Ошибка cleanup скрывает исходную причину                  | Сохранение primary error, отдельные cleanup logs         | Нужна настроенная эксплуатационная доставка logs               |
-| Закрытый socket «освободил capacity», но SQL ещё работает | Admission держит token до завершения repository          | Браузерный abort не отменяет SQL                               |
-| Длинная очередь съедает память                            | Bounded acquisition и HTTP admission                     | Лимиты не глобальны                                            |
-| Десятки тысяч DOM nodes                                   | Настоящее virtual window                                 | Загруженные records остаются в JS memory                       |
-| Layout читается на каждом scroll                          | Cached geometry + rAF + passive listener                 | Fixed-height ceiling и устройство пользователя                 |
-| IME создаёт запросы по незавершённым символам             | Composition-aware debounce                               | Нужны дальнейшие usability checks для целевой аудитории        |
-| 200 с неправильным payload ломает render                  | Runtime page validation                                  | Не полная schema validation                                    |
-| При изменении dataset появляется бесконечный restart      | Recovery только для следующих страниц, первая может fail | Не обнаруживаются абсолютно все изменения                      |
-| Фильтр пропал из top-20 и его нельзя снять                | Выбранные значения сохраняются в controls                | Sidebar может включать выбранные значения сверх top-20         |
-| Seed дублируется или стирает реальные записи              | Ledger, locks, empty-table guard                         | Demo data следует отделять от реального продуктового окружения |
-| SIGTERM убивает активный процесс без cleanup              | Drain, bounded shutdown, close pool/telemetry            | Работает для standalone lifecycle, не автоматически для Vercel |
-| Error logs содержат SQL, пароль и search                  | Sanitized metadata и allowlists                          | Не заменяет policies всех внешних collectors                   |
-| Console и server logs невозможно связать                  | Server requestId и response traceId                      | Browser tracing/centralized error collection пока отсутствуют  |
+| Типичная проблема | Что сделано здесь | Оставшаяся граница |
+|---|---|---|
+| Старый search response перезаписывает новый | Abort + current query + active effect | Нет собственного fetch deadline |
+| Observer одновременно грузит одну страницу дважды | Синхронный busy guard | Отдельные UI-сессии всё равно создают отдельные запросы |
+| Нестабильный порядок одинакового возраста | Финальный `id ASC` | Concurrent writes могут сдвинуть OFFSET |
+| COUNT, page и facets относятся к разным моментам | Один SQL statement snapshot | Между страницами общего snapshot нет |
+| Hobbies на карточках порождают N+1 queries | Сбор hobbies внутри SQL | Общая стоимость SQL всё равно зависит от dataset |
+| Хобби созданы частично | Общая transaction с user insert | Прямые внешние writers должны соблюдать ограничения |
+| Ошибка cleanup скрывает исходную причину | Сохранение primary error, отдельные cleanup logs | Нужна настроенная эксплуатационная доставка logs |
+| Закрытый socket «освободил capacity», но SQL ещё работает | Admission держит token до завершения repository | Браузерный abort не отменяет SQL |
+| Длинная очередь съедает память | Bounded acquisition и HTTP admission | Лимиты не глобальны |
+| Десятки тысяч DOM nodes | Настоящее virtual window | Загруженные records остаются в JS memory |
+| Layout читается на каждом scroll | Cached geometry + rAF + passive listener | Fixed-height ceiling и устройство пользователя |
+| IME создаёт запросы по незавершённым символам | Composition-aware debounce | Нужны дальнейшие usability checks для целевой аудитории |
+| 200 с неправильным payload ломает render | Runtime page validation | Не полная schema validation |
+| При изменении dataset появляется бесконечный restart | Recovery только для следующих страниц, первая может fail | Не обнаруживаются абсолютно все изменения |
+| Фильтр пропал из top-20 и его нельзя снять | Выбранные значения сохраняются в controls | Sidebar может включать выбранные значения сверх top-20 |
+| Seed дублируется или стирает реальные записи | Ledger, locks, empty-table guard | Demo data следует отделять от реального продуктового окружения |
+| SIGTERM убивает активный процесс без cleanup | Drain, bounded shutdown, close pool/telemetry | Работает для standalone lifecycle, не автоматически для Vercel |
+| Error logs содержат SQL, пароль и search | Sanitized metadata и allowlists | Не заменяет policies всех внешних collectors |
+| Console и server logs невозможно связать | Server requestId и response traceId | Browser tracing/centralized error collection пока отсутствуют |
 
 ## 12. Намеренные компромиссы и соответствие исходному упражнению
 
@@ -668,13 +668,14 @@ Production readiness и exercise compliance — разные оси оценки
 требует SQLite. Сам факт большей привычности PostgreSQL в deployment не
 делает эту замену соблюдением задания.
 
-**Nationality facets теперь соответствуют result-set semantics.** Counts
-учитывают search, hobbies и selected nationalities; значения с нулевым count
-не добавляются из глобального справочника. Клиент всё равно сохраняет выбранное
-значение в controls, если оно исчезло из top 20, чтобы его можно было снять.
+**Статичные nationality choices.** Их counts учитывают search и hobbies,
+но игнорируют selected nationalities и могут включать глобальные нулевые values.
+Это сознательно сохраняет доступность чекбоксов. Исходное ТЗ требует top-20
+именно текущего result set по всем фильтрам. Для строгого соответствия нужны
+другие facets, независимо от качества общей архитектуры.
 
-**Seed теперь есть.** Он находится в миграции проекта, не зависит от наличия
-ранее вручную заполненной deployed-базы и рассчитан
+**Seed теперь есть.** Он находится в миграции проекта, пока не закоммиченной,
+не зависит от наличия ранее вручную заполненной deployed-базы и рассчитан
 на свежий запуск. При этом база всё ещё PostgreSQL.
 
 **Фиксированные карточки и replaceState.** Это разумные ограничения небольшого
@@ -748,17 +749,17 @@ pagination consistency. Polling/SSE нужны, если требуется ви
 
 Production gate должен быть конкретным, а не «все тесты зелёные».
 
-| Критерий                                            | Проверяемое доказательство                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Права на writes определены                          | Проверки, что запрещённые операции отклоняются, а разрешённые проходят           |
-| Потеря данных контролируется                        | Выполненный restore exercise с согласованными RPO/RTO                            |
-| Deployment воспроизводим                            | Новый environment разворачивается по документации; миграции не дублируются       |
-| Capacity известна                                   | Repeatable measurements актуального commit с rate, mix, duration и dataset       |
+| Критерий | Проверяемое доказательство |
+|---|---|
+| Права на writes определены | Проверки, что запрещённые операции отклоняются, а разрешённые проходят |
+| Потеря данных контролируется | Выполненный restore exercise с согласованными RPO/RTO |
+| Deployment воспроизводим | Новый environment разворачивается по документации; миграции не дублируются |
+| Capacity известна | Repeatable measurements актуального commit с rate, mix, duration и dataset |
 | Перегрузка не превращается в неконтролируемый отказ | Ограниченные queues, предсказуемые errors и измеренное восстановление после пика |
-| Ошибку можно расследовать                           | Browser requestId приводит к server operation и DB stage в настроенных системах  |
-| UI не зависает бесконечно                           | Проверяемый client deadline, visible retry и отсутствие retry storm              |
-| Регрессия не попадает в main незаметно              | Автоматизированный pipeline с unit, SQL integration и browser checks             |
-| Контракт согласован                                 | Явно принято PostgreSQL deviation либо исправлено исходное ТЗ                    |
+| Ошибку можно расследовать | Browser requestId приводит к server operation и DB stage в настроенных системах |
+| UI не зависает бесконечно | Проверяемый client deadline, visible retry и отсутствие retry storm |
+| Регрессия не попадает в main незаметно | Автоматизированный pipeline с unit, SQL integration и browser checks |
+| Контракт согласован | Явно приняты PostgreSQL/nationality-facet deviations либо исправлено исходное ТЗ |
 
 Если команда выбирает p95 < 2 s, p99 < 4 s и errors <= 1%, это сначала
 предлагаемые acceptance thresholds. Текущие настройки k6 не превращают их
@@ -787,8 +788,8 @@ PostgreSQL transactions и обычных npm lifecycle scripts вместо с�
 > Frontend использует настоящую виртуализацию, а backend — согласованный SQL GET,
 > structured diagnostics и проверяемый lifecycle. При этом для production
 > с реальными данными ещё нужны контроль writes, эксплуатационный мониторинг,
-> restore practice и подтверждённая capacity. PostgreSQL остаётся явным
-> отклонением от исходного exercise.
+> restore practice и подтверждённая capacity. PostgreSQL и nationality facets
+> являются явными отклонениями от исходного exercise.
 
 Это сильнее и полезнее, чем утверждение «полностью production-ready»:
 оно показывает не только использованные приёмы, но и понимание того,

@@ -36,9 +36,11 @@ function createRepository({ database = pool } = {}) {
            FROM filtered f JOIN hobbies h ON h.user_id = f.id
            GROUP BY h.hobby ORDER BY count DESC, value ASC LIMIT 20
          ), nationality_facets AS (
-           SELECT nationality value, COUNT(*)::integer count
-           FROM filtered
-           GROUP BY nationality
+           SELECT all_values.value, COALESCE(scoped.count, 0)::integer count
+           FROM (SELECT DISTINCT nationality value FROM users) all_values
+           LEFT JOIN (
+             SELECT nationality value, COUNT(*)::integer count FROM nationality_scope GROUP BY nationality
+           ) scoped USING (value)
            ORDER BY count DESC, value ASC LIMIT 20
          )
          SELECT (SELECT COUNT(*)::integer FROM filtered) total,
